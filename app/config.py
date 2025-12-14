@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Dict
 
 
 class Settings:
@@ -23,8 +24,45 @@ class Settings:
             f".{ext.lower().strip()}" for ext in os.getenv("ALLOWED_EXTENSIONS", default_exts).split(",")
         }
 
+        # Managed categories map to directories ("label:path" pairs separated by commas)
+        raw_categories = os.getenv("MEDIA_CATEGORIES")
+        self.category_map: Dict[str, str] = self._load_categories(raw_categories)
+        self.category_paths: Dict[str, str] = {path: name for name, path in self.category_map.items()}
+
         # Maximum upload size in bytes (default 200MB for video)
         self.max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", 200 * 1024 * 1024))
+
+    @staticmethod
+    def normalize_category(category: str | None) -> str | None:
+        if category is None:
+            return None
+        cleaned = "".join(c for c in category if c.isalnum() or c in {"-", "_", " "})
+        cleaned = cleaned.strip().replace(" ", "_")
+        return cleaned or None
+
+    def _load_categories(self, raw: str | None) -> Dict[str, str]:
+        if not raw:
+            return {}
+
+        mapping: Dict[str, str] = {}
+        for entry in raw.split(","):
+            if not entry.strip():
+                continue
+
+            if ":" in entry:
+                name, path = entry.split(":", 1)
+            else:
+                name = path = entry
+
+            clean_name = self.normalize_category(name)
+            clean_path = self.normalize_category(path)
+
+            if not clean_name or not clean_path:
+                continue
+
+            mapping[clean_name] = clean_path
+
+        return mapping
 
 
 settings = Settings()
