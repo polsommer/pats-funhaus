@@ -7,7 +7,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, Query
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    UploadFile,
+    Query,
+    Response,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -179,16 +189,13 @@ def serve_media(media_path: str) -> FileResponse:
 
 @app.post("/api/media", status_code=201)
 def upload_media(
-    file: Annotated[UploadFile, File(...)],
+    response: Response,
+    files: Annotated[list[UploadFile], File(...)],
     category: Annotated[str | None, Form()] = None,
     _: None = Depends(verify_token),
-) -> dict[str, str | dict[str, str] | None]:
-    if not is_allowed_file(file.filename):
-        raise HTTPException(status_code=400, detail="File type not allowed")
-
-    data = file.file.read(settings.max_upload_bytes + 1)
-    if len(data) > settings.max_upload_bytes:
-        raise HTTPException(status_code=413, detail="File too large")
+) -> dict[str, str | dict[str, str] | list[dict[str, str | None]] | None]:
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
 
     safe_category = normalize_category(category)
     category_record = category_store.get_by_name(safe_category) if safe_category else None
@@ -199,24 +206,92 @@ def upload_media(
     target_dir = settings.media_dir / category_path if category_path else settings.media_dir
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    target_path = target_dir / file.filename
-    counter = 1
-    while target_path.exists():
-        stem = Path(file.filename).stem
-        suffix = Path(file.filename).suffix
-        target_path = target_dir / f"{stem}_{counter}{suffix}"
-        counter += 1
+    results: list[dict[str, str | None]] = []
 
-    with target_path.open("wb") as buffer:
-        buffer.write(data)
+    for upload in files:
+        results.append(process_upload_file(upload, target_dir))
+
+    has_success = any(result.get("status") == "success" for result in results)
+    has_failure = any(result.get("status") == "error" for result in results)
+    if has_success and has_failure:
+        response.status_code = 207  # Multi-Status
+    elif has_success:
+        response.status_code = 201
+    else:
+        response.status_code = 207
 
     return {
+        "message": "Uploaded" if has_success else "Upload failed",
+        "category": {"name": safe_category, "path": category_path} if safe_category else None,
+        "results": results,
+    }
+
+
+def process_upload_file(upload: UploadFile, target_dir: Path) -> dict[str, str | None]:
+    if not upload.filename:
+        return {"name": "", "status": "error", "message": "Filename is required", "path": None}
+
+    if not is_allowed_file(upload.filename):
+        return {
+            "name": upload.filename,
+            "status": "error",
+            "message": "File type not allowed",
+            "path": None,
+        }
+
+    target_path = _resolve_target_path(upload.filename, target_dir)
+
+    try:
+        _stream_to_disk(upload, target_path)
+    except HTTPException as error:
+        if target_path.exists():
+            target_path.unlink(missing_ok=True)
+        return {
+            "name": upload.filename,
+            "status": "error",
+            "message": error.detail if isinstance(error.detail, str) else "Upload failed",
+            "path": None,
+        }
+    except Exception:
+        if target_path.exists():
+            target_path.unlink(missing_ok=True)
+        return {
+            "name": upload.filename,
+            "status": "error",
+            "message": "Upload failed",
+            "path": None,
+        }
+
+    return {
+        "name": upload.filename,
+        "status": "success",
         "message": "Uploaded",
         "path": str(target_path.relative_to(settings.media_dir)),
-        "category": {"name": safe_category, "path": category_path}
-        if safe_category
-        else None,
     }
+
+
+def _stream_to_disk(upload: UploadFile, target_path: Path, chunk_size: int = 1024 * 1024) -> None:
+    total_bytes = 0
+    with target_path.open("wb") as buffer:
+        while True:
+            chunk = upload.file.read(chunk_size)
+            if not chunk:
+                break
+            total_bytes += len(chunk)
+            if total_bytes > settings.max_upload_bytes:
+                raise HTTPException(status_code=413, detail="File too large")
+            buffer.write(chunk)
+
+
+def _resolve_target_path(filename: str, target_dir: Path) -> Path:
+    target_path = target_dir / filename
+    counter = 1
+    while target_path.exists():
+        stem = Path(filename).stem
+        suffix = Path(filename).suffix
+        target_path = target_dir / f"{stem}_{counter}{suffix}"
+        counter += 1
+    return target_path
 
 
 @app.get("/api/categories")

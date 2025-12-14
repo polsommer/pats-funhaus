@@ -495,8 +495,9 @@ main,
   position: relative;
   min-height: 1.2em;
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.25rem;
+  white-space: pre-line;
 }
 
 .upload-status[data-state='error'] {
