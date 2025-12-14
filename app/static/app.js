@@ -6,8 +6,12 @@ const closeBtn = document.querySelector('.close');
 const filterSelect = document.querySelector('#categoryFilter');
 const uploadForm = document.querySelector('#uploadForm');
 const uploadTokenInput = document.querySelector('#uploadToken');
-const uploadCategoryInput = document.querySelector('#uploadCategory');
 const uploadFileInput = document.querySelector('#uploadFile');
+const uploadCategorySelect = document.querySelector('#uploadCategorySelect');
+const uploadStatus = document.querySelector('.upload-status');
+const progressContainer = document.querySelector('.progress');
+const progressBar = document.querySelector('.progress-bar');
+const progressText = document.querySelector('.progress-text');
 
 let allCategories = [];
 
@@ -17,36 +21,72 @@ filterSelect.addEventListener('change', () => {
 
 uploadForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (!uploadFileInput.files.length) return;
+  const tokenValue = uploadTokenInput.value.trim();
+  const file = uploadFileInput.files[0];
+
+  if (!tokenValue) {
+    setUploadStatus('Upload token is required', 'error');
+    return;
+  }
+
+  if (!file) {
+    setUploadStatus('Choose a file to upload', 'error');
+    return;
+  }
 
   const formData = new FormData();
-  formData.append('file', uploadFileInput.files[0]);
-  const categoryValue = uploadCategoryInput.value.trim();
-  if (categoryValue) {
-    formData.append('category', categoryValue);
+  formData.append('file', file);
+  const selectedCategory = uploadCategorySelect.value.trim();
+  if (selectedCategory) {
+    formData.append('category', selectedCategory);
   }
 
   try {
-    statusEl.textContent = 'Uploading...';
-    const res = await fetch('/api/media', {
-      method: 'POST',
-      headers: { 'X-Upload-Token': uploadTokenInput.value },
-      body: formData,
-    });
-
-    if (!res.ok) {
-      const error = await res.json().catch(() => ({ detail: 'Upload failed' }));
-      throw new Error(error.detail || 'Upload failed');
-    }
+    setUploadStatus('Uploading...');
+    await uploadMedia(formData, tokenValue);
 
     uploadForm.reset();
-    statusEl.textContent = 'Upload complete';
+    uploadTokenInput.value = tokenValue;
+    setUploadStatus('Upload complete', 'success');
     await fetchMedia(filterSelect.value);
   } catch (err) {
     console.error(err);
-    statusEl.textContent = err.message || 'Unable to upload';
+    setUploadStatus(err.message || 'Unable to upload', 'error');
+  } finally {
+    progressContainer.hidden = true;
   }
 });
+
+function uploadMedia(formData, token) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/media');
+    xhr.setRequestHeader('X-Upload-Token', token);
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        updateProgress(percent);
+      }
+    });
+
+    xhr.addEventListener('loadstart', () => updateProgress(0));
+    xhr.addEventListener('loadend', () => updateProgress(100));
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(JSON.parse(xhr.responseText || '{}'));
+        progressContainer.hidden = true;
+      } else {
+        const error = JSON.parse(xhr.responseText || '{}');
+        reject(new Error(error.detail || 'Upload failed'));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Network error during upload'));
+    xhr.send(formData);
+  });
+}
 
 async function fetchMedia(category = filterSelect.value) {
   try {
@@ -72,12 +112,24 @@ function updateCategoryOptions(items, merge = false) {
   items.forEach((item) => categories.add(item.category || 'Uncategorized'));
 
   allCategories = Array.from(categories).sort((a, b) => a.localeCompare(b));
-  filterSelect.innerHTML = '<option value="">All</option>';
-  for (const category of allCategories) {
+  renderSelectOptions(filterSelect, allCategories, { includeAll: true });
+  renderSelectOptions(uploadCategorySelect, allCategories, { includeAll: false, uncategorizedLabel: 'Uncategorized' });
+}
+
+function renderSelectOptions(select, categories, { includeAll = false, uncategorizedLabel = 'All' } = {}) {
+  select.innerHTML = '';
+  if (includeAll) {
+    const allOption = document.createElement('option');
+    allOption.value = '';
+    allOption.textContent = uncategorizedLabel;
+    select.appendChild(allOption);
+  }
+
+  for (const category of categories) {
     const option = document.createElement('option');
     option.value = category === 'Uncategorized' ? '' : category;
     option.textContent = category;
-    filterSelect.appendChild(option);
+    select.appendChild(option);
   }
 }
 
@@ -110,6 +162,17 @@ function renderGrid(items) {
     card.addEventListener('click', () => openModal(item));
     grid.appendChild(card);
   }
+}
+
+function setUploadStatus(message, state = 'info') {
+  uploadStatus.textContent = message;
+  uploadStatus.dataset.state = state;
+}
+
+function updateProgress(percent) {
+  progressContainer.hidden = false;
+  progressBar.style.width = `${percent}%`;
+  progressText.textContent = `${percent}%`;
 }
 
 function openModal(item) {
