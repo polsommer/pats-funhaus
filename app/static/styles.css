@@ -61,6 +61,125 @@ main {
   flex: 1;
 }
 
+.upload-panel {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(14, 165, 233, 0.03)),
+    var(--card);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 14px;
+  padding: 1.25rem;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.upload-copy {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.upload-copy h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.upload-copy p {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  color: var(--accent);
+  margin: 0;
+  font-weight: 700;
+}
+
+.upload-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.input-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.input-group {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.input-group input,
+.input-group select {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--text);
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.input-group input:focus,
+.input-group select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+}
+
+.upload-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.upload-progress {
+  margin: 0;
+  color: var(--muted);
+}
+
+.upload-progress[data-tone='error'] {
+  color: #fca5a5;
+}
+
+.upload-progress[data-tone='success'] {
+  color: #34d399;
+}
+
+.upload-form button {
+  padding: 0.75rem 1.25rem;
+  border-radius: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+  color: #0b162a;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
+  box-shadow: 0 12px 28px rgba(14, 165, 233, 0.3);
+}
+
+.upload-form button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 32px rgba(14, 165, 233, 0.35);
+}
+
+.upload-form button:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.3);
+  opacity: 0.8;
+  box-shadow: none;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -178,5 +297,9 @@ main {
     flex-direction: column;
     gap: 0.5rem;
     text-align: center;
+  }
+
+  .upload-footer {
+    align-items: flex-start;
   }
 }

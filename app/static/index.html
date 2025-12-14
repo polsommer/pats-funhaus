@@ -9,9 +9,42 @@
   <body>
     <header>
       <div class="logo"><span>Pi</span>Media Gallery</div>
-      <div class="upload-tip">Upload via API using your X-Upload-Token</div>
     </header>
     <main>
+      <section class="upload-panel" aria-labelledby="upload-title">
+        <div class="upload-copy">
+          <p class="eyebrow">Upload</p>
+          <div>
+            <h2 id="upload-title">Add media</h2>
+            <p>Send photos or videos directly to your gallery using the token provided by your Pi.</p>
+          </div>
+        </div>
+        <form class="upload-form" id="upload-form">
+          <label class="input-group">
+            <span>Media file</span>
+            <input type="file" id="file" name="file" accept="image/*,video/*" required />
+          </label>
+          <div class="input-row">
+            <label class="input-group">
+              <span>Category <small>(optional)</small></span>
+              <select id="category" name="category">
+                <option value="">Choose a category</option>
+                <option value="photos">Photos</option>
+                <option value="videos">Videos</option>
+                <option value="timelapse">Timelapse</option>
+              </select>
+            </label>
+            <label class="input-group">
+              <span>X-Upload-Token <small>(if required)</small></span>
+              <input type="password" id="token" name="token" placeholder="Paste your upload token" autocomplete="off" />
+            </label>
+          </div>
+          <div class="upload-footer">
+            <p class="upload-progress" aria-live="polite">Choose a file to begin.</p>
+            <button type="submit">Upload</button>
+          </div>
+        </form>
+      </section>
       <div class="grid" aria-live="polite"></div>
       <p class="status"></p>
     </main>
