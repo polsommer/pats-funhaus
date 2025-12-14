@@ -10,6 +10,13 @@ A lightweight FastAPI-powered gallery designed for Raspberry Pi 4. It serves ima
 
 ## Quickstart
 
+### Guided script (fastest)
+```bash
+./quickstart.sh
+```
+The script prompts for your upload token, media directory, host, and port, sets up a virtual environment, installs dependencies, and optionally starts Uvicorn immediately. Run it from the repo root. Use `AUTO_START=no ./quickstart.sh` to skip the auto-start prompt.
+
+### Manual setup
 ```bash
 cd app
 python -m venv .venv
