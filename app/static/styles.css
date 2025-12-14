@@ -61,7 +61,16 @@ header {
   flex-wrap: wrap;
 }
 
-.filter {
+.controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.filter,
+.search,
+.sort {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -69,12 +78,40 @@ header {
   color: var(--muted);
 }
 
-.filter select {
+.filter select,
+.search input,
+.sort select {
   padding: 0.45rem 0.6rem;
   border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.4);
   background: var(--card);
   color: var(--text);
+  min-width: 180px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+}
+
+.search input::placeholder {
+  color: var(--muted);
+}
+
+.shuffle {
+  align-self: flex-end;
+  padding: 0.6rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.6);
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  box-shadow: 0 10px 30px rgba(14, 165, 233, 0.25);
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.shuffle:hover {
+  background: rgba(56, 189, 248, 0.18);
+  transform: translateY(-1px);
+  box-shadow: 0 16px 32px rgba(56, 189, 248, 0.25);
 }
 
 .upload-panel {
@@ -351,6 +388,16 @@ main {
     flex-direction: column;
     width: 100%;
     align-items: stretch;
+  }
+
+  .controls {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .shuffle {
+    width: 100%;
   }
 
   .upload-panel {

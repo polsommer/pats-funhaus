@@ -4,6 +4,9 @@ const modal = document.querySelector('.modal');
 const modalContent = document.querySelector('.modal-content');
 const closeBtn = document.querySelector('.close');
 const filterSelect = document.querySelector('#categoryFilter');
+const searchInput = document.querySelector('#searchInput');
+const sortSelect = document.querySelector('#sortSelect');
+const shuffleButton = document.querySelector('#shuffleButton');
 const uploadForm = document.querySelector('#uploadForm');
 const uploadTokenInput = document.querySelector('#uploadToken');
 const uploadFileInput = document.querySelector('#uploadFile');
@@ -14,9 +17,15 @@ const progressBar = document.querySelector('.progress-bar');
 const progressText = document.querySelector('.progress-text');
 
 let allCategories = [];
+let mediaCache = [];
+let currentItems = [];
 
-filterSelect.addEventListener('change', () => {
-  fetchMedia(filterSelect.value);
+filterSelect.addEventListener('change', applyFilters);
+searchInput.addEventListener('input', applyFilters);
+sortSelect.addEventListener('change', applyFilters);
+shuffleButton.addEventListener('click', () => {
+  currentItems = shuffleItems(currentItems);
+  renderGrid(currentItems);
 });
 
 uploadForm.addEventListener('submit', async (event) => {
@@ -48,7 +57,7 @@ uploadForm.addEventListener('submit', async (event) => {
     uploadForm.reset();
     uploadTokenInput.value = tokenValue;
     setUploadStatus('Upload complete', 'success');
-    await fetchMedia(filterSelect.value);
+    await fetchMedia();
   } catch (err) {
     console.error(err);
     setUploadStatus(err.message || 'Unable to upload', 'error');
@@ -88,35 +97,97 @@ function uploadMedia(formData, token) {
   });
 }
 
-async function fetchMedia(category = filterSelect.value) {
+async function fetchMedia() {
   try {
     statusEl.textContent = 'Loading media...';
     const url = new URL('/api/media', window.location.origin);
-    if (category) {
-      url.searchParams.set('category', category);
-    }
     const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to load media');
-    const items = await res.json();
-    updateCategoryOptions(items, Boolean(category));
-    renderGrid(items);
-    statusEl.textContent = items.length ? '' : 'No media uploaded yet';
+    mediaCache = await res.json();
+    updateCategoryOptions(mediaCache);
+    applyFilters();
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Unable to load media';
   }
 }
 
-function updateCategoryOptions(items, merge = false) {
-  const categories = new Set(merge ? allCategories : []);
+function updateCategoryOptions(items) {
+  const categories = new Set();
   items.forEach((item) => categories.add(item.category || 'Uncategorized'));
 
   allCategories = Array.from(categories).sort((a, b) => a.localeCompare(b));
   renderSelectOptions(filterSelect, allCategories, { includeAll: true });
-  renderSelectOptions(uploadCategorySelect, allCategories, { includeAll: false, uncategorizedLabel: 'Uncategorized' });
+  renderSelectOptions(uploadCategorySelect, allCategories, {
+    includeAll: false,
+    uncategorizedLabel: 'Uncategorized',
+    emptyUncategorizedValue: true,
+  });
 }
 
-function renderSelectOptions(select, categories, { includeAll = false, uncategorizedLabel = 'All' } = {}) {
+function applyFilters() {
+  const selectedCategory = filterSelect.value.trim();
+  const searchTerm = searchInput.value.trim().toLowerCase();
+
+  const filtered = mediaCache.filter((item) => {
+    const matchesCategory = selectedCategory
+      ? (item.category || 'Uncategorized') === selectedCategory
+      : true;
+
+    const nameMatch = item.name.toLowerCase().includes(searchTerm);
+    const categoryLabel = (item.category || 'Uncategorized').toLowerCase();
+    const categoryMatch = categoryLabel.includes(searchTerm);
+
+    return matchesCategory && (!searchTerm || nameMatch || categoryMatch);
+  });
+
+  currentItems = sortItems(filtered, sortSelect.value);
+  renderGrid(currentItems);
+  const hasMedia = mediaCache.length > 0;
+  if (currentItems.length) {
+    statusEl.textContent = '';
+  } else if (hasMedia) {
+    statusEl.textContent = 'No media matches your filters';
+  } else {
+    statusEl.textContent = 'No media uploaded yet';
+  }
+}
+
+function sortItems(items, sortBy) {
+  const sorted = [...items];
+
+  switch (sortBy) {
+    case 'oldest':
+      sorted.sort((a, b) => new Date(a.modified) - new Date(b.modified));
+      break;
+    case 'name-asc':
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+      break;
+    case 'name-desc':
+      sorted.sort((a, b) => b.name.localeCompare(a.name));
+      break;
+    default:
+      sorted.sort((a, b) => new Date(b.modified) - new Date(a.modified));
+      break;
+  }
+
+  return sorted;
+}
+
+function shuffleItems(items) {
+  const shuffled = [...items];
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+function renderSelectOptions(
+  select,
+  categories,
+  { includeAll = false, uncategorizedLabel = 'All', emptyUncategorizedValue = false } = {}
+) {
   select.innerHTML = '';
   if (includeAll) {
     const allOption = document.createElement('option');
@@ -127,7 +198,8 @@ function renderSelectOptions(select, categories, { includeAll = false, uncategor
 
   for (const category of categories) {
     const option = document.createElement('option');
-    option.value = category === 'Uncategorized' ? '' : category;
+    const isUncategorized = category === 'Uncategorized';
+    option.value = isUncategorized && emptyUncategorizedValue ? '' : category;
     option.textContent = category;
     select.appendChild(option);
   }

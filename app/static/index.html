@@ -10,12 +10,33 @@
     <header>
       <div class="logo"><span>Pi</span>Media Gallery</div>
       <div class="actions">
-        <label class="filter">
-          <span>Category</span>
-          <select id="categoryFilter">
-            <option value="">All</option>
-          </select>
-        </label>
+        <div class="controls">
+          <label class="filter">
+            <span>Category</span>
+            <select id="categoryFilter">
+              <option value="">All</option>
+            </select>
+          </label>
+          <label class="search">
+            <span>Search</span>
+            <input
+              type="search"
+              id="searchInput"
+              placeholder="Search by name or category"
+              aria-label="Search media"
+            />
+          </label>
+          <label class="sort">
+            <span>Sort</span>
+            <select id="sortSelect" aria-label="Sort media">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="name-asc">Name A-Z</option>
+              <option value="name-desc">Name Z-A</option>
+            </select>
+          </label>
+          <button class="shuffle" id="shuffleButton" type="button">Shuffle</button>
+        </div>
         <div class="upload-panel">
           <div class="panel-header">
             <div>
