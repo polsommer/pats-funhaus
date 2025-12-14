@@ -16,12 +16,46 @@
             <option value="">All</option>
           </select>
         </label>
-        <form id="uploadForm">
-          <input type="text" id="uploadToken" placeholder="Upload token" aria-label="Upload token" required />
-          <input type="text" id="uploadCategory" placeholder="Category (optional)" aria-label="Category" />
-          <input type="file" id="uploadFile" aria-label="Media file" required />
-          <button type="submit">Upload</button>
-        </form>
+        <div class="upload-panel">
+          <div class="panel-header">
+            <div>
+              <p class="upload-title">Upload media</p>
+              <p class="upload-tip">Drop in a photo or video. Categories are optional.</p>
+            </div>
+          </div>
+          <form id="uploadForm">
+            <div class="field-row">
+              <label class="field">
+                <span>Upload token</span>
+                <input
+                  type="text"
+                  id="uploadToken"
+                  placeholder="Paste upload token"
+                  aria-label="Upload token"
+                  required
+                />
+              </label>
+              <label class="field">
+                <span>Category (optional)</span>
+                <select id="uploadCategorySelect" aria-label="Upload category">
+                  <option value="">Uncategorized</option>
+                </select>
+              </label>
+            </div>
+            <div class="field-row file-row">
+              <label class="file-field">
+                <span>Media file</span>
+                <input type="file" id="uploadFile" aria-label="Media file" required />
+              </label>
+              <button type="submit">Upload</button>
+            </div>
+            <div class="progress" hidden>
+              <div class="progress-bar"></div>
+              <span class="progress-text">0%</span>
+            </div>
+            <p class="upload-status" role="status"></p>
+          </form>
+        </div>
       </div>
     </header>
     <main>
