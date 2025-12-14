@@ -39,11 +39,7 @@ def is_allowed_file(filename: str) -> bool:
 
 
 def normalize_category(category: str | None) -> str | None:
-    if category is None:
-        return None
-    cleaned = "".join(c for c in category if c.isalnum() or c in {"-", "_", " "})
-    cleaned = cleaned.strip().replace(" ", "_")
-    return cleaned or None
+    return settings.normalize_category(category)
 
 
 @app.get("/api/media")
@@ -56,7 +52,9 @@ def list_media(
         if not file_path.is_file() or not is_allowed_file(file_path.name):
             continue
         relative_path = file_path.relative_to(settings.media_dir)
-        item_category = relative_path.parts[0] if len(relative_path.parts) > 1 else None
+        category_path = relative_path.parts[0] if len(relative_path.parts) > 1 else None
+        item_category = settings.category_paths.get(category_path, category_path)
+
         if filter_category is not None and filter_category != item_category:
             continue
         stat = file_path.stat()
@@ -66,6 +64,7 @@ def list_media(
                 "name": file_path.name,
                 "path": str(relative_path),
                 "category": item_category,
+                "category_path": category_path,
                 "size": stat.st_size,
                 "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
                 "mime_type": mime_type or "application/octet-stream",
@@ -91,7 +90,7 @@ def upload_media(
     file: Annotated[UploadFile, File(...)],
     category: Annotated[str | None, Form()] = None,
     _: None = Depends(verify_token),
-) -> dict[str, str | None]:
+) -> dict[str, str | dict[str, str] | None]:
     if not is_allowed_file(file.filename):
         raise HTTPException(status_code=400, detail="File type not allowed")
 
@@ -100,7 +99,11 @@ def upload_media(
         raise HTTPException(status_code=413, detail="File too large")
 
     safe_category = normalize_category(category)
-    target_dir = settings.media_dir / safe_category if safe_category else settings.media_dir
+    if safe_category is not None and safe_category not in settings.category_map:
+        raise HTTPException(status_code=400, detail="Unknown category")
+
+    category_path = settings.category_map.get(safe_category)
+    target_dir = settings.media_dir / category_path if category_path else settings.media_dir
     target_dir.mkdir(parents=True, exist_ok=True)
 
     target_path = target_dir / file.filename
@@ -117,7 +120,9 @@ def upload_media(
     return {
         "message": "Uploaded",
         "path": str(target_path.relative_to(settings.media_dir)),
-        "category": safe_category,
+        "category": {"name": safe_category, "path": category_path}
+        if safe_category
+        else None,
     }
 
 
