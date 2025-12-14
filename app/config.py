@@ -29,6 +29,11 @@ class Settings:
         self.category_map: Dict[str, str] = self._load_categories(raw_categories)
         self.category_paths: Dict[str, str] = {path: name for name, path in self.category_map.items()}
 
+        self.category_store_path: Path = Path(
+            os.getenv("CATEGORY_STORE", base_dir / "categories.json")
+        ).expanduser().resolve()
+        self.category_store_path.parent.mkdir(parents=True, exist_ok=True)
+
         # Maximum upload size in bytes (default 200MB for video)
         self.max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", 200 * 1024 * 1024))
 
