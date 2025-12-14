@@ -12,6 +12,8 @@ const uploadStatus = document.querySelector('.upload-status');
 const progressContainer = document.querySelector('.progress');
 const progressBar = document.querySelector('.progress-bar');
 const progressText = document.querySelector('.progress-text');
+const heroUploadButton = document.querySelector('#startUpload');
+const uploadSection = document.querySelector('#upload');
 
 let allCategories = [];
 
@@ -195,6 +197,12 @@ modal.addEventListener('click', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') modal.classList.remove('open');
+});
+
+heroUploadButton?.addEventListener('click', (event) => {
+  event.preventDefault();
+  uploadSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  window.requestAnimationFrame(() => uploadTokenInput?.focus({ preventScroll: true }));
 });
 
 fetchMedia();
