@@ -9,6 +9,8 @@ const uploadTokenInput = document.querySelector('#uploadToken');
 const uploadFileInput = document.querySelector('#uploadFile');
 const uploadCategorySelect = document.querySelector('#uploadCategorySelect');
 const uploadStatus = document.querySelector('.upload-status');
+const dropzone = document.querySelector('#uploadDropzone');
+const dropFilename = document.querySelector('#dropFilename');
 const progressContainer = document.querySelector('.progress');
 const progressBar = document.querySelector('.progress-bar');
 const progressText = document.querySelector('.progress-text');
@@ -46,8 +48,10 @@ uploadForm.addEventListener('submit', async (event) => {
     await uploadMedia(formData, tokenValue);
 
     uploadForm.reset();
+    updateSelectedFile(null);
     uploadTokenInput.value = tokenValue;
     setUploadStatus('Upload complete', 'success');
+    triggerCelebrate();
     await fetchMedia(filterSelect.value);
   } catch (err) {
     console.error(err);
@@ -55,6 +59,19 @@ uploadForm.addEventListener('submit', async (event) => {
   } finally {
     progressContainer.hidden = true;
   }
+});
+
+if (dropzone) {
+  dropzone.addEventListener('dragenter', handleDragEnter);
+  dropzone.addEventListener('dragover', handleDragEnter);
+  dropzone.addEventListener('dragleave', handleDragLeave);
+  dropzone.addEventListener('drop', handleDrop);
+}
+
+uploadFileInput.addEventListener('change', () => {
+  const file = uploadFileInput.files[0];
+  updateSelectedFile(file || null);
+  if (file) setUploadStatus(`Ready to upload ${file.name}`);
 });
 
 function uploadMedia(formData, token) {
@@ -167,12 +184,64 @@ function renderGrid(items) {
 function setUploadStatus(message, state = 'info') {
   uploadStatus.textContent = message;
   uploadStatus.dataset.state = state;
+  uploadStatus.classList.remove('pop');
+  void uploadStatus.offsetWidth;
+  uploadStatus.classList.add('pop');
 }
 
 function updateProgress(percent) {
   progressContainer.hidden = false;
   progressBar.style.width = `${percent}%`;
   progressText.textContent = `${percent}%`;
+}
+
+function handleDragEnter(event) {
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy';
+  }
+  dropzone.classList.add('is-dragover');
+  setUploadStatus('Drop to upload your media');
+}
+
+function handleDragLeave(event) {
+  event.preventDefault();
+  if (!dropzone.contains(event.relatedTarget)) {
+    dropzone.classList.remove('is-dragover');
+  }
+}
+
+function handleDrop(event) {
+  event.preventDefault();
+  dropzone.classList.remove('is-dragover');
+  const files = event.dataTransfer?.files;
+  if (!files?.length) return;
+  assignFiles(files);
+}
+
+function assignFiles(files) {
+  const [file] = files;
+  if (!file) return;
+  const dataTransfer = new DataTransfer();
+  dataTransfer.items.add(file);
+  uploadFileInput.files = dataTransfer.files;
+  updateSelectedFile(file);
+  setUploadStatus(`Ready to upload ${file.name}`);
+}
+
+function updateSelectedFile(file) {
+  if (file) {
+    dropFilename.textContent = file.name;
+    dropzone.classList.add('has-file');
+  } else {
+    dropFilename.textContent = 'Drop or choose a file';
+    dropzone.classList.remove('has-file');
+  }
+}
+
+function triggerCelebrate() {
+  dropzone.classList.add('celebrate');
+  setTimeout(() => dropzone.classList.remove('celebrate'), 1200);
 }
 
 function openModal(item) {
