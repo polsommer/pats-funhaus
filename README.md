@@ -98,3 +98,11 @@ sudo sed -i '/^#dtoverlay=vc4-kms-v3d/c\dtoverlay=vc4-kms-v3d' /boot/firmware/co
 sudo reboot
 ```
 Most browsers on Pi will prefer H.264/MP4; encode uploads accordingly for smoother playback.
+
+#### Intel iGPU (VAAPI) setup
+For Intel iGPUs, enable VAAPI so the UI and transcoding tools can offload H.264 decode/encode:
+- Install media drivers (Debian/Ubuntu example): `sudo apt install vainfo intel-media-va-driver-non-free`
+- Verify support: run `vainfo` and confirm H.264 decode/encode profiles are listed
+- Encode uploads with VAAPI-backed H.264 for smooth playback, e.g. `ffmpeg -hwaccel vaapi -hwaccel_output_format vaapi -i input.mkv -c:v h264_vaapi -b:v 4M -vf 'format=nv12|vaapi,hwupload' output.mp4`
+- Browsers typically prioritize H.264; ensure uploaded files use H.264/MP4 for best compatibility
+- In Docker, pass the GPU device into the container: `docker run ... --device /dev/dri ...` (and set `LIBVA_DRIVER_NAME` if needed)
