@@ -38,7 +38,6 @@ def is_allowed_file(filename: str) -> bool:
     return Path(filename.lower()).suffix in settings.allowed_extensions
 
 
-@app.get("/api/media")
 def normalize_category(category: str | None) -> str | None:
     if category is None:
         return None
@@ -48,7 +47,9 @@ def normalize_category(category: str | None) -> str | None:
 
 
 @app.get("/api/media")
-def list_media(category: Annotated[str | None, Query(None, alias="category")] = None) -> list[dict[str, str | int]]:
+def list_media(
+    category: Annotated[str | None, Query(alias="category")] = None,
+) -> list[dict[str, str | int]]:
     filter_category = normalize_category(category)
     items: list[dict[str, str | int]] = []
     for file_path in sorted(settings.media_dir.rglob("*")):
@@ -88,7 +89,7 @@ def serve_media(media_path: str) -> FileResponse:
 @app.post("/api/media", status_code=201)
 def upload_media(
     file: Annotated[UploadFile, File(...)],
-    category: Annotated[str | None, Form(None)],
+    category: Annotated[str | None, Form()] = None,
     _: None = Depends(verify_token),
 ) -> dict[str, str]:
     if not is_allowed_file(file.filename):
