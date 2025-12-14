@@ -10,6 +10,12 @@ A lightweight FastAPI-powered gallery designed for Raspberry Pi 4. It serves ima
 
 ## Quickstart
 
+### Prerequisites
+Install a Python runtime with venv support and a tool for downloads:
+- Debian/Ubuntu: `sudo apt-get update && sudo apt-get install -y python3 python3-venv python3-pip curl`
+- Fedora: `sudo dnf install -y python3 python3-venv python3-pip curl`
+- macOS (Homebrew): `brew install python curl`
+
 ### Guided script (fastest)
 ```bash
 ./quickstart.sh
