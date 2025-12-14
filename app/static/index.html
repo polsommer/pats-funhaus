@@ -69,8 +69,15 @@
               </label>
             </div>
             <div class="field-row file-row">
-              <label class="file-field">
-                <span>Media file</span>
+              <label class="file-field dropzone" id="uploadDropzone">
+                <div class="dropzone-body">
+                  <div class="drop-icon" aria-hidden="true">⬆</div>
+                  <div class="dropcopy">
+                    <span class="field-label">Media file</span>
+                    <strong id="dropFilename">Drop or choose a file</strong>
+                    <p class="drop-hint">Click to browse or drop a photo/video</p>
+                  </div>
+                </div>
                 <input type="file" id="uploadFile" aria-label="Media file" required />
               </label>
               <button type="submit">Upload</button>
