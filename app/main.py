@@ -49,7 +49,7 @@ def normalize_category(category: str | None) -> str | None:
 @app.get("/api/media")
 def list_media(
     category: Annotated[str | None, Query(alias="category")] = None,
-) -> list[dict[str, str | int]]:
+) -> list[dict[str, str | int | None]]:
     filter_category = normalize_category(category)
     items: list[dict[str, str | int]] = []
     for file_path in sorted(settings.media_dir.rglob("*")):
@@ -91,7 +91,7 @@ def upload_media(
     file: Annotated[UploadFile, File(...)],
     category: Annotated[str | None, Form()] = None,
     _: None = Depends(verify_token),
-) -> dict[str, str]:
+) -> dict[str, str | None]:
     if not is_allowed_file(file.filename):
         raise HTTPException(status_code=400, detail="File type not allowed")
 
