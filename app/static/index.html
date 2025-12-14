@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pi Media Gallery</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="logo"><span>Pi</span>Media Gallery</div>
+      <div class="upload-tip">Upload via API using your X-Upload-Token</div>
+    </header>
+    <main>
+      <div class="grid" aria-live="polite"></div>
+      <p class="status"></p>
+    </main>
+
+    <section class="modal" role="dialog" aria-modal="true">
+      <div class="modal-content">
+        <button class="close" aria-label="Close">✕</button>
+      </div>
+    </section>
+
+    <script src="/static/app.js" type="module"></script>
+  </body>
+</html>
