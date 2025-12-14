@@ -38,34 +38,57 @@ shuffleButton?.addEventListener('click', () => applyFilters({ shuffle: true }));
 uploadForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const tokenValue = uploadTokenInput.value.trim();
-  const file = uploadFileInput.files[0];
+  const files = Array.from(uploadFileInput.files || []);
 
   if (!tokenValue) {
     setUploadStatus('Upload token is required', 'error');
     return;
   }
 
-  if (!file) {
-    setUploadStatus('Choose a file to upload', 'error');
+  if (!files.length) {
+    setUploadStatus('Choose at least one file to upload', 'error');
     return;
   }
 
-  const formData = new FormData();
-  formData.append('file', file);
-  const selectedCategory = uploadCategorySelect.value.trim();
-  if (selectedCategory) {
-    formData.append('category', selectedCategory);
-  }
-
   try {
-    setUploadStatus('Uploading...');
-    await uploadMedia(formData, tokenValue);
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+
+    const selectedCategory = uploadCategorySelect.value.trim();
+    if (selectedCategory) {
+      formData.append('category', selectedCategory);
+    }
+
+    setUploadStatus(`Uploading ${files.length} file${files.length > 1 ? 's' : ''}...`);
+    const payload = await uploadMedia(formData, tokenValue, {
+      onProgress: (percent) => updateProgress(percent, `${files.length} file${files.length > 1 ? 's' : ''}`),
+    });
+
+    const results = Array.isArray(payload.results) ? payload.results : [];
+    const successes = results.filter((result) => result.status === 'success');
+    const failures = results.filter((result) => result.status === 'error');
 
     uploadForm.reset();
-    updateSelectedFile(null);
+    updateSelectedFiles([]);
+    
     uploadTokenInput.value = tokenValue;
-    setUploadStatus('Upload complete', 'success');
-    triggerCelebrate();
+
+    if (results.length) {
+      const summary = results
+        .map((result) => {
+          const icon = result.status === 'success' ? '✅' : '⚠️';
+          return `${icon} ${result.name || 'Untitled'}: ${result.message || ''}`.trim();
+        })
+        .join('\n');
+      setUploadStatus(summary, failures.length ? 'error' : 'success');
+    } else {
+      setUploadStatus('No files were processed', 'error');
+    }
+
+    if (successes.length) {
+      triggerCelebrate();
+    }
+
     await Promise.all([fetchMedia(), fetchCategories({ preserveSelection: true })]);
   } catch (err) {
     console.error(err);
@@ -83,9 +106,9 @@ if (dropzone) {
 }
 
 uploadFileInput.addEventListener('change', () => {
-  const file = uploadFileInput.files[0];
-  updateSelectedFile(file || null);
-  if (file) setUploadStatus(`Ready to upload ${file.name}`);
+  const files = Array.from(uploadFileInput.files || []);
+  updateSelectedFiles(files);
+  if (files.length) setUploadStatus(`Ready to upload ${formatFileSummary(files)}`);
 });
 
 categoryForm?.addEventListener('submit', async (event) => {
@@ -116,30 +139,46 @@ categoryForm?.addEventListener('submit', async (event) => {
   }
 });
 
-function uploadMedia(formData, token) {
+function uploadMedia(formData, token, { onProgress } = {}) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/media');
     xhr.setRequestHeader('X-Upload-Token', token);
 
+    const handleProgress = (percent) => {
+      if (typeof onProgress === 'function') {
+        onProgress(percent);
+      } else {
+        updateProgress(percent);
+      }
+    };
+
     xhr.upload.addEventListener('progress', (event) => {
       if (event.lengthComputable) {
         const percent = Math.round((event.loaded / event.total) * 100);
-        updateProgress(percent);
+        handleProgress(percent);
       }
     });
 
-    xhr.addEventListener('loadstart', () => updateProgress(0));
-    xhr.addEventListener('loadend', () => updateProgress(100));
+    xhr.addEventListener('loadstart', () => handleProgress(0));
+    xhr.addEventListener('loadend', () => handleProgress(100));
 
     xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(JSON.parse(xhr.responseText || '{}'));
-        progressContainer.hidden = true;
-      } else {
-        const error = JSON.parse(xhr.responseText || '{}');
-        reject(new Error(error.detail || 'Upload failed'));
+      let parsedResponse = {};
+      try {
+        parsedResponse = JSON.parse(xhr.responseText || '{}');
+      } catch (error) {
+        parsedResponse = {};
       }
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(parsedResponse);
+        progressContainer.hidden = true;
+        return;
+      }
+
+      const detail = parsedResponse.detail || parsedResponse.message || 'Upload failed';
+      reject(new Error(detail));
     };
 
     xhr.onerror = () => reject(new Error('Network error during upload'));
@@ -339,10 +378,10 @@ function setCategoryStatus(message, state = 'info') {
   categoryStatus.classList.add('pop');
 }
 
-function updateProgress(percent) {
+function updateProgress(percent, label) {
   progressContainer.hidden = false;
   progressBar.style.width = `${percent}%`;
-  progressText.textContent = `${percent}%`;
+  progressText.textContent = label ? `${percent}% • ${label}` : `${percent}%`;
 }
 
 function handleDragEnter(event) {
@@ -370,23 +409,29 @@ function handleDrop(event) {
 }
 
 function assignFiles(files) {
-  const [file] = files;
-  if (!file) return;
+  if (!files?.length) return;
   const dataTransfer = new DataTransfer();
-  dataTransfer.items.add(file);
+  Array.from(files).forEach((file) => dataTransfer.items.add(file));
   uploadFileInput.files = dataTransfer.files;
-  updateSelectedFile(file);
-  setUploadStatus(`Ready to upload ${file.name}`);
+  const selected = Array.from(uploadFileInput.files || []);
+  updateSelectedFiles(selected);
+  setUploadStatus(`Ready to upload ${formatFileSummary(selected)}`);
 }
 
-function updateSelectedFile(file) {
-  if (file) {
-    dropFilename.textContent = file.name;
+function updateSelectedFiles(files) {
+  if (files.length) {
+    dropFilename.textContent = formatFileSummary(files);
     dropzone.classList.add('has-file');
   } else {
-    dropFilename.textContent = 'Drop or choose a file';
+    dropFilename.textContent = 'Drop or choose files';
     dropzone.classList.remove('has-file');
   }
+}
+
+function formatFileSummary(files) {
+  if (!files.length) return 'no files';
+  if (files.length === 1) return files[0].name;
+  return `${files[0].name} (+${files.length - 1} more)`;
 }
 
 function triggerCelebrate() {
