@@ -25,6 +25,7 @@ const categoryStatus = document.querySelector('.category-status');
 const categoryList = document.querySelector('#categoryList');
 
 let allCategories = [];
+let categoryLookup = new Map();
 let cachedItems = [];
 
 filterSelect.addEventListener('change', () => applyFilters());
@@ -103,13 +104,17 @@ categoryForm?.addEventListener('submit', async (event) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: categoryName }),
     });
+    const createdCategory = await res.json().catch(() => null);
     if (!res.ok) {
-      const error = await res.json().catch(() => ({}));
+      const error = createdCategory || {};
       throw new Error(error.detail || 'Unable to save category');
     }
     categoryInput.value = '';
     setCategoryStatus('Category added', 'success');
-    await fetchCategories({ preserveSelection: false, newSelection: categoryName });
+    await fetchCategories({
+      preserveSelection: false,
+      newSelection: createdCategory?.path || createdCategory?.name || categoryName,
+    });
   } catch (err) {
     console.error(err);
     setCategoryStatus(err.message || 'Unable to save category', 'error');
@@ -186,21 +191,42 @@ async function fetchCategories({ preserveSelection = false, newSelection } = {})
   }
 }
 
+function normalizeCategories(categories) {
+  const normalized = [];
+  const seen = new Set();
+
+  for (const category of categories) {
+    if (!category) continue;
+    const name = (category.name || category.label || '').trim();
+    const path = (category.path || category.value || '').trim();
+    if (!name) continue;
+    const key = `${name}::${path}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push({ name, path });
+  }
+
+  if (![...seen].some((key) => key.endsWith('::'))) {
+    normalized.push({ name: 'Uncategorized', path: '' });
+  }
+
+  return normalized.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function setCategories(categories) {
-  const normalized = categories.map((category) => category || 'Uncategorized');
-  const uniqueCategories = new Set([...normalized, 'Uncategorized']);
-  allCategories = [...uniqueCategories].sort((a, b) => a.localeCompare(b));
+  const normalizedCategories = normalizeCategories(categories);
+  allCategories = normalizedCategories;
+  categoryLookup = new Map(normalizedCategories.map(({ path, name }) => [path || '', name]));
+
   renderSelectOptions(filterSelect, allCategories, { includeAll: true });
-  renderSelectOptions(uploadCategorySelect, allCategories, {
-    includeAll: false,
-    uncategorizedLabel: 'Uncategorized',
-  });
+  renderSelectOptions(uploadCategorySelect, allCategories, { includeAll: false });
   renderCategoryList(allCategories);
 }
 
 function applyFilters({ shuffle = false } = {}) {
   const query = searchInput?.value.trim().toLowerCase() || '';
   const selectedCategory = filterSelect.value;
+  const matchAllCategories = selectedCategory === '__all__';
 
   if (!cachedItems.length) {
     renderGrid([]);
@@ -209,8 +235,12 @@ function applyFilters({ shuffle = false } = {}) {
   }
 
   let items = cachedItems.filter((item) => {
-    const categoryLabel = item.category || 'Uncategorized';
-    const matchesCategory = !selectedCategory || categoryLabel === selectedCategory;
+    const itemCategoryPath = item.category_path || '';
+    const categoryLabel = getCategoryLabel(itemCategoryPath, item.category);
+    const matchesCategory =
+      matchAllCategories ||
+      (selectedCategory === '' && !itemCategoryPath) ||
+      selectedCategory === itemCategoryPath;
     const matchesQuery = !query
       ? true
       : item.name.toLowerCase().includes(query) || categoryLabel.toLowerCase().includes(query);
@@ -250,19 +280,19 @@ function shuffleItems(items) {
   return copy;
 }
 
-function renderSelectOptions(select, categories, { includeAll = false, uncategorizedLabel = 'All' } = {}) {
+function renderSelectOptions(select, categories, { includeAll = false } = {}) {
   select.innerHTML = '';
   if (includeAll) {
     const allOption = document.createElement('option');
-    allOption.value = '';
-    allOption.textContent = uncategorizedLabel;
+    allOption.value = '__all__';
+    allOption.textContent = 'All categories';
     select.appendChild(allOption);
   }
 
   for (const category of categories) {
     const option = document.createElement('option');
-    option.value = category === 'Uncategorized' ? '' : category;
-    option.textContent = category;
+    option.value = category.path || '';
+    option.textContent = category.name;
     select.appendChild(option);
   }
 }
@@ -281,10 +311,10 @@ function renderCategoryList(categories) {
   for (const category of categories) {
     const item = document.createElement('li');
     item.className = 'category-chip';
-    item.textContent = category;
+    item.textContent = category.name;
     item.addEventListener('click', () => {
-      filterSelect.value = category;
-      uploadCategorySelect.value = category;
+      filterSelect.value = category.path || '';
+      uploadCategorySelect.value = category.path || '';
       applyFilters();
     });
     categoryList.appendChild(item);
@@ -309,7 +339,7 @@ function renderGrid(items) {
 
     const meta = document.createElement('div');
     meta.className = 'meta';
-    const categoryLabel = item.category || 'Uncategorized';
+    const categoryLabel = getCategoryLabel(item.category_path, item.category);
     meta.innerHTML = `
       <div class="badge">${categoryLabel}</div>
       <strong>${item.name}</strong>
@@ -392,6 +422,11 @@ function updateSelectedFile(file) {
 function triggerCelebrate() {
   dropzone.classList.add('celebrate');
   setTimeout(() => dropzone.classList.remove('celebrate'), 1200);
+}
+
+function getCategoryLabel(categoryPath, fallbackName) {
+  const normalizedPath = categoryPath || '';
+  return categoryLookup.get(normalizedPath) || fallbackName || 'Uncategorized';
 }
 
 function openModal(item) {
