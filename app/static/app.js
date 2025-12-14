@@ -19,6 +19,10 @@ const uploadSection = document.querySelector('#upload');
 const searchInput = document.querySelector('#searchInput');
 const sortSelect = document.querySelector('#sortSelect');
 const shuffleButton = document.querySelector('#shuffleButton');
+const categoryForm = document.querySelector('#categoryForm');
+const categoryInput = document.querySelector('#categoryInput');
+const categoryStatus = document.querySelector('.category-status');
+const categoryList = document.querySelector('#categoryList');
 
 let allCategories = [];
 let cachedItems = [];
@@ -62,7 +66,7 @@ uploadForm.addEventListener('submit', async (event) => {
     uploadTokenInput.value = tokenValue;
     setUploadStatus('Upload complete', 'success');
     triggerCelebrate();
-    await fetchMedia();
+    await Promise.all([fetchMedia(), fetchCategories({ preserveSelection: true })]);
   } catch (err) {
     console.error(err);
     setUploadStatus(err.message || 'Unable to upload', 'error');
@@ -82,6 +86,34 @@ uploadFileInput.addEventListener('change', () => {
   const file = uploadFileInput.files[0];
   updateSelectedFile(file || null);
   if (file) setUploadStatus(`Ready to upload ${file.name}`);
+});
+
+categoryForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const categoryName = categoryInput.value.trim();
+  if (!categoryName) {
+    setCategoryStatus('Enter a category name', 'error');
+    return;
+  }
+
+  try {
+    setCategoryStatus('Saving...');
+    const res = await fetch('/api/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: categoryName }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.detail || 'Unable to save category');
+    }
+    categoryInput.value = '';
+    setCategoryStatus('Category added', 'success');
+    await fetchCategories({ preserveSelection: false, newSelection: categoryName });
+  } catch (err) {
+    console.error(err);
+    setCategoryStatus(err.message || 'Unable to save category', 'error');
+  }
 });
 
 function uploadMedia(formData, token) {
@@ -122,7 +154,6 @@ async function fetchMedia() {
     const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to load media');
     cachedItems = await res.json();
-    updateCategoryOptions(cachedItems);
     applyFilters();
   } catch (err) {
     console.error(err);
@@ -130,13 +161,41 @@ async function fetchMedia() {
   }
 }
 
-function updateCategoryOptions(items) {
-  const categories = new Set();
-  items.forEach((item) => categories.add(item.category || 'Uncategorized'));
+async function fetchCategories({ preserveSelection = false, newSelection } = {}) {
+  const previousFilter = filterSelect.value;
+  const previousUpload = uploadCategorySelect.value;
 
-  allCategories = Array.from(categories).sort((a, b) => a.localeCompare(b));
+  try {
+    const res = await fetch('/api/categories');
+    if (!res.ok) throw new Error('Failed to load categories');
+
+    const payload = await res.json();
+    const categories = Array.isArray(payload) ? payload : payload.categories || [];
+    setCategories(categories);
+
+    if (newSelection) {
+      uploadCategorySelect.value = newSelection;
+      filterSelect.value = newSelection;
+    } else if (preserveSelection) {
+      filterSelect.value = previousFilter;
+      uploadCategorySelect.value = previousUpload;
+    }
+  } catch (err) {
+    console.error(err);
+    setCategoryStatus('Unable to load categories', 'error');
+  }
+}
+
+function setCategories(categories) {
+  const normalized = categories.map((category) => category || 'Uncategorized');
+  const uniqueCategories = new Set([...normalized, 'Uncategorized']);
+  allCategories = [...uniqueCategories].sort((a, b) => a.localeCompare(b));
   renderSelectOptions(filterSelect, allCategories, { includeAll: true });
-  renderSelectOptions(uploadCategorySelect, allCategories, { includeAll: false, uncategorizedLabel: 'Uncategorized' });
+  renderSelectOptions(uploadCategorySelect, allCategories, {
+    includeAll: false,
+    uncategorizedLabel: 'Uncategorized',
+  });
+  renderCategoryList(allCategories);
 }
 
 function applyFilters({ shuffle = false } = {}) {
@@ -208,6 +267,30 @@ function renderSelectOptions(select, categories, { includeAll = false, uncategor
   }
 }
 
+function renderCategoryList(categories) {
+  if (!categoryList) return;
+  categoryList.innerHTML = '';
+
+  if (!categories.length) {
+    const empty = document.createElement('li');
+    empty.textContent = 'No categories yet';
+    categoryList.appendChild(empty);
+    return;
+  }
+
+  for (const category of categories) {
+    const item = document.createElement('li');
+    item.className = 'category-chip';
+    item.textContent = category;
+    item.addEventListener('click', () => {
+      filterSelect.value = category;
+      uploadCategorySelect.value = category;
+      applyFilters();
+    });
+    categoryList.appendChild(item);
+  }
+}
+
 function renderGrid(items) {
   grid.innerHTML = '';
   for (const item of items) {
@@ -245,6 +328,15 @@ function setUploadStatus(message, state = 'info') {
   uploadStatus.classList.remove('pop');
   void uploadStatus.offsetWidth;
   uploadStatus.classList.add('pop');
+}
+
+function setCategoryStatus(message, state = 'info') {
+  if (!categoryStatus) return;
+  categoryStatus.textContent = message;
+  categoryStatus.dataset.state = state;
+  categoryStatus.classList.remove('pop');
+  void categoryStatus.offsetWidth;
+  categoryStatus.classList.add('pop');
 }
 
 function updateProgress(percent) {
@@ -330,4 +422,5 @@ heroUploadButton?.addEventListener('click', (event) => {
   window.requestAnimationFrame(() => uploadTokenInput?.focus({ preventScroll: true }));
 });
 
+fetchCategories();
 fetchMedia();

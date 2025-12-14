@@ -65,52 +65,79 @@
             </div>
           </div>
         </div>
-        <div class="upload-panel">
-          <div class="panel-header">
-            <div>
-              <p class="upload-title">Upload media</p>
-              <p class="upload-tip">Drop in a photo or video. Categories are optional.</p>
+        <div class="upload-grid">
+          <div class="upload-panel">
+            <div class="panel-header">
+              <div>
+                <p class="upload-title">Upload media</p>
+                <p class="upload-tip">Drop in a photo or video. Categories are optional.</p>
+              </div>
             </div>
+            <form id="uploadForm">
+              <div class="field-row">
+                <label class="field">
+                  <span>Upload token</span>
+                  <input
+                    type="text"
+                    id="uploadToken"
+                    placeholder="Paste upload token"
+                    aria-label="Upload token"
+                    required
+                  />
+                </label>
+                <label class="field">
+                  <span>Category (optional)</span>
+                  <select id="uploadCategorySelect" aria-label="Upload category">
+                    <option value="">Uncategorized</option>
+                  </select>
+                </label>
+              </div>
+              <div class="field-row file-row">
+                <label class="file-field dropzone" id="uploadDropzone">
+                  <div class="dropzone-body">
+                    <div class="drop-icon" aria-hidden="true">⬆</div>
+                    <div class="dropcopy">
+                      <span class="field-label">Media file</span>
+                      <strong id="dropFilename">Drop or choose a file</strong>
+                      <p class="drop-hint">Click to browse or drop a photo/video</p>
+                    </div>
+                  </div>
+                  <input type="file" id="uploadFile" aria-label="Media file" required />
+                </label>
+                <button type="submit">Upload</button>
+              </div>
+              <div class="progress" hidden>
+                <div class="progress-bar"></div>
+                <span class="progress-text">0%</span>
+              </div>
+              <p class="upload-status" role="status"></p>
+            </form>
           </div>
-          <form id="uploadForm">
-            <div class="field-row">
+
+          <div class="upload-panel category-panel">
+            <div class="panel-header">
+              <div>
+                <p class="upload-title">Manage categories</p>
+                <p class="upload-tip">Create categories to organize uploads and filters.</p>
+              </div>
+            </div>
+            <form id="categoryForm" class="category-form">
               <label class="field">
-                <span>Upload token</span>
+                <span>New category</span>
                 <input
                   type="text"
-                  id="uploadToken"
-                  placeholder="Paste upload token"
-                  aria-label="Upload token"
+                  id="categoryInput"
+                  name="category"
+                  placeholder="e.g. Holidays"
+                  aria-label="New category name"
                   required
                 />
               </label>
-              <label class="field">
-                <span>Category (optional)</span>
-                <select id="uploadCategorySelect" aria-label="Upload category">
-                  <option value="">Uncategorized</option>
-                </select>
-              </label>
-            </div>
-            <div class="field-row file-row">
-              <label class="file-field dropzone" id="uploadDropzone">
-                <div class="dropzone-body">
-                  <div class="drop-icon" aria-hidden="true">⬆</div>
-                  <div class="dropcopy">
-                    <span class="field-label">Media file</span>
-                    <strong id="dropFilename">Drop or choose a file</strong>
-                    <p class="drop-hint">Click to browse or drop a photo/video</p>
-                  </div>
-                </div>
-                <input type="file" id="uploadFile" aria-label="Media file" required />
-              </label>
-              <button type="submit">Upload</button>
-            </div>
-            <div class="progress" hidden>
-              <div class="progress-bar"></div>
-              <span class="progress-text">0%</span>
-            </div>
-            <p class="upload-status" role="status"></p>
-          </form>
+              <button type="submit">Add</button>
+            </form>
+            <p class="category-status" role="status"></p>
+            <ul id="categoryList" class="category-list"></ul>
+          </div>
         </div>
       </div>
     </section>
