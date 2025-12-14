@@ -16,12 +16,20 @@ const progressBar = document.querySelector('.progress-bar');
 const progressText = document.querySelector('.progress-text');
 const heroUploadButton = document.querySelector('#startUpload');
 const uploadSection = document.querySelector('#upload');
+const searchInput = document.querySelector('#searchInput');
+const sortSelect = document.querySelector('#sortSelect');
+const shuffleButton = document.querySelector('#shuffleButton');
 
 let allCategories = [];
+let cachedItems = [];
 
-filterSelect.addEventListener('change', () => {
-  fetchMedia(filterSelect.value);
-});
+filterSelect.addEventListener('change', () => applyFilters());
+
+searchInput?.addEventListener('input', () => applyFilters());
+
+sortSelect?.addEventListener('change', () => applyFilters());
+
+shuffleButton?.addEventListener('click', () => applyFilters({ shuffle: true }));
 
 uploadForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -54,7 +62,7 @@ uploadForm.addEventListener('submit', async (event) => {
     uploadTokenInput.value = tokenValue;
     setUploadStatus('Upload complete', 'success');
     triggerCelebrate();
-    await fetchMedia(filterSelect.value);
+    await fetchMedia();
   } catch (err) {
     console.error(err);
     setUploadStatus(err.message || 'Unable to upload', 'error');
@@ -107,32 +115,80 @@ function uploadMedia(formData, token) {
   });
 }
 
-async function fetchMedia(category = filterSelect.value) {
+async function fetchMedia() {
   try {
     statusEl.textContent = 'Loading media...';
     const url = new URL('/api/media', window.location.origin);
-    if (category) {
-      url.searchParams.set('category', category);
-    }
     const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to load media');
-    const items = await res.json();
-    updateCategoryOptions(items, Boolean(category));
-    renderGrid(items);
-    statusEl.textContent = items.length ? '' : 'No media uploaded yet';
+    cachedItems = await res.json();
+    updateCategoryOptions(cachedItems);
+    applyFilters();
   } catch (err) {
     console.error(err);
     statusEl.textContent = 'Unable to load media';
   }
 }
 
-function updateCategoryOptions(items, merge = false) {
-  const categories = new Set(merge ? allCategories : []);
+function updateCategoryOptions(items) {
+  const categories = new Set();
   items.forEach((item) => categories.add(item.category || 'Uncategorized'));
 
   allCategories = Array.from(categories).sort((a, b) => a.localeCompare(b));
   renderSelectOptions(filterSelect, allCategories, { includeAll: true });
   renderSelectOptions(uploadCategorySelect, allCategories, { includeAll: false, uncategorizedLabel: 'Uncategorized' });
+}
+
+function applyFilters({ shuffle = false } = {}) {
+  const query = searchInput?.value.trim().toLowerCase() || '';
+  const selectedCategory = filterSelect.value;
+
+  if (!cachedItems.length) {
+    renderGrid([]);
+    statusEl.textContent = 'No media uploaded yet';
+    return;
+  }
+
+  let items = cachedItems.filter((item) => {
+    const categoryLabel = item.category || 'Uncategorized';
+    const matchesCategory = !selectedCategory || categoryLabel === selectedCategory;
+    const matchesQuery = !query
+      ? true
+      : item.name.toLowerCase().includes(query) || categoryLabel.toLowerCase().includes(query);
+    return matchesCategory && matchesQuery;
+  });
+
+  if (shuffle) {
+    items = shuffleItems(items);
+  } else {
+    items = sortItems(items);
+  }
+
+  renderGrid(items);
+  statusEl.textContent = items.length ? '' : 'No items match your filters yet';
+}
+
+function sortItems(items) {
+  const selection = sortSelect?.value || 'recent';
+  const copy = [...items];
+
+  if (selection === 'name') {
+    return copy.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  return copy.sort((a, b) => {
+    const diff = new Date(a.modified).getTime() - new Date(b.modified).getTime();
+    return selection === 'oldest' ? diff : -diff;
+  });
+}
+
+function shuffleItems(items) {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
 }
 
 function renderSelectOptions(select, categories, { includeAll = false, uncategorizedLabel = 'All' } = {}) {

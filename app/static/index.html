@@ -36,12 +36,35 @@
         <p class="upload-subtext">Filter by category, then drop in a photo or video to add to the gallery.</p>
       </div>
       <div class="actions">
-        <label class="filter">
-          <span>Category</span>
-          <select id="categoryFilter">
-            <option value="">All</option>
-          </select>
-        </label>
+        <div class="filter-controls">
+          <label class="filter">
+            <span>Category</span>
+            <select id="categoryFilter">
+              <option value="">All</option>
+            </select>
+          </label>
+          <label class="filter search">
+            <span>Search</span>
+            <input
+              type="search"
+              id="searchInput"
+              name="search"
+              placeholder="Search by name or category"
+              aria-label="Search media"
+            />
+          </label>
+          <div class="filter inline">
+            <span>Sort</span>
+            <div class="sort-controls">
+              <select id="sortSelect" aria-label="Sort media">
+                <option value="recent">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="name">Name A–Z</option>
+              </select>
+              <button type="button" id="shuffleButton" class="shuffle">Shuffle</button>
+            </div>
+          </div>
+        </div>
         <div class="upload-panel">
           <div class="panel-header">
             <div>
