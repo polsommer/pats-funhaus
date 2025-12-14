@@ -9,7 +9,20 @@
   <body>
     <header>
       <div class="logo"><span>Pi</span>Media Gallery</div>
-      <div class="upload-tip">Upload via API using your X-Upload-Token</div>
+      <div class="actions">
+        <label class="filter">
+          <span>Category</span>
+          <select id="categoryFilter">
+            <option value="">All</option>
+          </select>
+        </label>
+        <form id="uploadForm">
+          <input type="text" id="uploadToken" placeholder="Upload token" aria-label="Upload token" required />
+          <input type="text" id="uploadCategory" placeholder="Category (optional)" aria-label="Category" />
+          <input type="file" id="uploadFile" aria-label="Media file" required />
+          <button type="submit">Upload</button>
+        </form>
+      </div>
     </header>
     <main>
       <div class="grid" aria-live="polite"></div>

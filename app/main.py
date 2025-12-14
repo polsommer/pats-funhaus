@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -39,21 +39,36 @@ def is_allowed_file(filename: str) -> bool:
 
 
 @app.get("/api/media")
-def list_media() -> list[dict[str, str | int]]:
+def normalize_category(category: str | None) -> str | None:
+    if category is None:
+        return None
+    cleaned = "".join(c for c in category if c.isalnum() or c in {"-", "_", " "})
+    cleaned = cleaned.strip().replace(" ", "_")
+    return cleaned or None
+
+
+@app.get("/api/media")
+def list_media(category: Annotated[str | None, Query(None, alias="category")] = None) -> list[dict[str, str | int]]:
+    filter_category = normalize_category(category)
     items: list[dict[str, str | int]] = []
     for file_path in sorted(settings.media_dir.rglob("*")):
         if not file_path.is_file() or not is_allowed_file(file_path.name):
+            continue
+        relative_path = file_path.relative_to(settings.media_dir)
+        item_category = relative_path.parts[0] if len(relative_path.parts) > 1 else None
+        if filter_category is not None and filter_category != item_category:
             continue
         stat = file_path.stat()
         mime_type, _ = mimetypes.guess_type(file_path.name)
         items.append(
             {
                 "name": file_path.name,
-                "path": str(file_path.relative_to(settings.media_dir)),
+                "path": str(relative_path),
+                "category": item_category,
                 "size": stat.st_size,
                 "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
                 "mime_type": mime_type or "application/octet-stream",
-                "url": f"/media/{file_path.relative_to(settings.media_dir)}",
+                "url": f"/media/{relative_path}",
             }
         )
     items.sort(key=lambda item: item["modified"], reverse=True)
@@ -73,6 +88,7 @@ def serve_media(media_path: str) -> FileResponse:
 @app.post("/api/media", status_code=201)
 def upload_media(
     file: Annotated[UploadFile, File(...)],
+    category: Annotated[str | None, Form(None)],
     _: None = Depends(verify_token),
 ) -> dict[str, str]:
     if not is_allowed_file(file.filename):
@@ -82,18 +98,26 @@ def upload_media(
     if len(data) > settings.max_upload_bytes:
         raise HTTPException(status_code=413, detail="File too large")
 
-    target_path = settings.media_dir / file.filename
+    safe_category = normalize_category(category)
+    target_dir = settings.media_dir / safe_category if safe_category else settings.media_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    target_path = target_dir / file.filename
     counter = 1
     while target_path.exists():
         stem = Path(file.filename).stem
         suffix = Path(file.filename).suffix
-        target_path = settings.media_dir / f"{stem}_{counter}{suffix}"
+        target_path = target_dir / f"{stem}_{counter}{suffix}"
         counter += 1
 
     with target_path.open("wb") as buffer:
         buffer.write(data)
 
-    return {"message": "Uploaded", "path": str(target_path.relative_to(settings.media_dir))}
+    return {
+        "message": "Uploaded",
+        "path": str(target_path.relative_to(settings.media_dir)),
+        "category": safe_category,
+    }
 
 
 @app.get("/")
