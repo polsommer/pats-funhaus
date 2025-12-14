@@ -7,8 +7,34 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <header>
+    <header class="top-nav">
       <div class="logo"><span>Pi</span>Media Gallery</div>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#gallery">Gallery</a>
+        <a href="#upload">Upload</a>
+        <a href="#about">About</a>
+      </nav>
+      <a class="pill-button" href="#upload">Start</a>
+    </header>
+
+    <section class="hero" id="hero">
+      <div class="hero__content">
+        <p class="eyebrow">Pi-powered sharing</p>
+        <h1>Showcase your favorite clips and snaps in vivid color.</h1>
+        <p class="lede">Upload directly from your Pi and explore everything you've captured in one vibrant, responsive gallery.</p>
+        <div class="hero__actions">
+          <button class="cta" id="startUpload">Upload media</button>
+          <a class="ghost" href="#gallery">Browse gallery</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="upload" class="upload-section">
+      <div class="section-header">
+        <p class="eyebrow">Upload</p>
+        <h2>Share something new</h2>
+        <p class="upload-subtext">Filter by category, then drop in a photo or video to add to the gallery.</p>
+      </div>
       <div class="actions">
         <label class="filter">
           <span>Category</span>
@@ -57,11 +83,25 @@
           </form>
         </div>
       </div>
-    </header>
-    <main>
+    </section>
+
+    <main id="gallery">
+      <div class="section-header">
+        <p class="eyebrow">Gallery</p>
+        <h2>Your media hub</h2>
+        <p class="upload-subtext">Every clip and snapshot stays organized with simple category filters.</p>
+      </div>
       <div class="grid" aria-live="polite"></div>
       <p class="status"></p>
     </main>
+
+    <section id="about" class="about">
+      <div class="about-card">
+        <p class="eyebrow">About</p>
+        <h2>Built for the Pi.</h2>
+        <p>Pi Media Gallery turns your Pi into a simple media hub. Upload securely with tokens, browse instantly with smooth previews, and enjoy a colorful experience across devices.</p>
+      </div>
+    </section>
 
     <section class="modal" role="dialog" aria-modal="true">
       <div class="modal-content">
