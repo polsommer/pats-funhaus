@@ -42,7 +42,20 @@ main() {
 
   log "Using app directory: $APP_DIR"
   log "Creating virtual environment at $VENV_DIR (if missing)"
-  python3 -m venv "$VENV_DIR"
+  if ! python3 -m venv "$VENV_DIR"; then
+    cat >&2 <<'ERR'
+Unable to create a virtual environment. Install the venv tooling and try again, e.g.:
+  # Debian/Ubuntu
+  sudo apt-get update && sudo apt-get install -y python3-venv python3-pip
+
+  # Fedora
+  sudo dnf install -y python3-venv python3-pip
+
+  # macOS (Homebrew)
+  brew install python
+ERR
+    exit 1
+  fi
 
   # shellcheck disable=SC1091
   source "$VENV_DIR/bin/activate"
@@ -57,9 +70,12 @@ main() {
   export UPLOAD_TOKEN="$upload_token"
   export MEDIA_DIR="$media_dir"
 
+  export PYTHONPATH="$PROJECT_ROOT:${PYTHONPATH:-}"
+
   log "Ready to launch"
   echo "Env: UPLOAD_TOKEN=$UPLOAD_TOKEN"
   echo "Env: MEDIA_DIR=$MEDIA_DIR"
+  echo "Env: PYTHONPATH=$PYTHONPATH"
   echo "Command: python -m uvicorn app.main:app --host $host --port $port"
 
   if [[ ${AUTO_START:-yes} == "yes" ]]; then
