@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import secrets
+from urllib.parse import urlparse
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -167,6 +168,88 @@ class CategoryStore:
 category_store = CategoryStore(settings.category_store_path, settings.category_map)
 
 
+class Link(BaseModel):
+    id: str
+    name: str
+    url: str
+    domain: str
+    category: str | None = None
+    category_path: str | None = None
+    added: str
+
+
+class LinkStore:
+    def __init__(self, store_path: Path):
+        self.store_path = store_path
+        self.links: list[Link] = []
+        self._load()
+
+    def _load(self) -> None:
+        if not self.store_path.exists():
+            self.links = []
+            return
+
+        with self.store_path.open("r", encoding="utf-8") as file:
+            raw_links = json.load(file)
+            self.links = [Link(**item) for item in raw_links]
+
+    def _persist(self) -> None:
+        temp_path = self.store_path.with_suffix(self.store_path.suffix + ".tmp")
+        with temp_path.open("w", encoding="utf-8") as file:
+            json.dump([link.model_dump() for link in self.links], file, indent=2)
+        temp_path.replace(self.store_path)
+
+    def list(self) -> list[Link]:
+        return list(self.links)
+
+    def _validate_url(self, url: str) -> tuple[str, str]:
+        parsed = urlparse(url.strip())
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ValueError("Provide a valid https URL")
+        return parsed.geturl(), parsed.netloc
+
+    def _resolve_category(self, category: str | None) -> tuple[str | None, str | None]:
+        normalized = normalize_category(category)
+        if normalized is None:
+            return None, None
+
+        category_record = category_store.get_by_name(normalized) or category_store.get_by_path(normalized)
+        if category_record is None:
+            raise ValueError("Unknown category")
+        return category_record.name, category_record.path
+
+    def add(self, url: str, name: str | None = None, category: str | None = None) -> Link:
+        clean_url, domain = self._validate_url(url)
+        resolved_category, resolved_path = self._resolve_category(category)
+
+        if any(link.url == clean_url for link in self.links):
+            raise ValueError("Link already added")
+
+        link = Link(
+            id=secrets.token_hex(8),
+            name=name.strip() if name and name.strip() else domain,
+            url=clean_url,
+            domain=domain,
+            category=resolved_category,
+            category_path=resolved_path,
+            added=datetime.utcnow().isoformat(),
+        )
+        self.links.append(link)
+        self._persist()
+        return link
+
+    def delete(self, link_id: str) -> Link:
+        for index, link in enumerate(self.links):
+            if link.id == link_id:
+                removed = self.links.pop(index)
+                self._persist()
+                return removed
+        raise KeyError("Link not found")
+
+
+link_store = LinkStore(settings.link_store_path)
+
+
 class CreateCategoryRequest(BaseModel):
     name: str
     path: str | None = None
@@ -175,6 +258,12 @@ class CreateCategoryRequest(BaseModel):
 class UpdateCategoryRequest(BaseModel):
     name: str | None = None
     path: str | None = None
+
+
+class CreateLinkRequest(BaseModel):
+    url: str
+    name: str | None = None
+    category: str | None = None
 
 
 @app.get("/api/media")
@@ -205,6 +294,27 @@ def list_media(
                 "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
                 "mime_type": mime_type or "application/octet-stream",
                 "url": f"/media/{relative_path}",
+                "source": "file",
+            }
+        )
+
+    for link in link_store.list():
+        if filter_category is not None and filter_category != link.category:
+            continue
+
+        items.append(
+            {
+                "id": link.id,
+                "name": link.name,
+                "path": f"link:{link.id}",
+                "category": link.category,
+                "category_path": link.category_path,
+                "size": None,
+                "modified": link.added,
+                "mime_type": "text/html",
+                "url": link.url,
+                "source": "link",
+                "domain": link.domain,
             }
         )
     items.sort(key=lambda item: item["modified"], reverse=True)
@@ -364,11 +474,27 @@ def _validate_media_path(relative_path: str) -> Path:
     return target_path
 
 
+def _is_link_path(path: str) -> bool:
+    return path.startswith("link:")
+
+
+def _delete_link_by_path(link_path: str) -> dict[str, str]:
+    link_id = link_path.split(":", 1)[-1]
+    try:
+        link_store.delete(link_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return {"message": "Deleted", "path": link_path}
+
+
 @app.delete("/api/media")
 def delete_media(
     path: Annotated[str, Query(alias="path")],
     _: None = Depends(verify_token),
 ) -> dict[str, str]:
+    if _is_link_path(path):
+        return _delete_link_by_path(path)
+
     target_path = _validate_media_path(path)
 
     if not target_path.is_file():
@@ -390,6 +516,28 @@ def delete_media_batch(
     results: list[dict[str, str | int]] = []
 
     for raw_path in payload:
+        if _is_link_path(raw_path):
+            try:
+                deleted = _delete_link_by_path(raw_path)
+                results.append(
+                    {
+                        "path": deleted.get("path", raw_path),
+                        "status": "success",
+                        "message": deleted.get("message", "Deleted"),
+                        "code": 200,
+                    }
+                )
+            except HTTPException as error:
+                results.append(
+                    {
+                        "path": raw_path,
+                        "status": "error",
+                        "message": error.detail if isinstance(error.detail, str) else "Invalid path",
+                        "code": error.status_code,
+                    }
+                )
+            continue
+
         try:
             target_path = _validate_media_path(raw_path)
         except HTTPException as error:
@@ -485,6 +633,27 @@ def update_category(name: str, payload: UpdateCategoryRequest) -> Category:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/api/links")
+def list_links() -> list[Link]:
+    return link_store.list()
+
+
+@app.post("/api/links", status_code=201)
+def create_link(payload: CreateLinkRequest, _: None = Depends(verify_token)) -> Link:
+    try:
+        return link_store.add(payload.url, payload.name, payload.category)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.delete("/api/links/{link_id}")
+def delete_link(link_id: str, _: None = Depends(verify_token)) -> Link:
+    try:
+        return link_store.delete(link_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @app.get("/")

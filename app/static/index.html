@@ -65,11 +65,11 @@
             </div>
           </div>
         </div>
-        <div class="upload-grid">
-          <div class="upload-panel">
-            <div class="panel-header">
-              <div>
-                <p class="upload-title">Upload media</p>
+          <div class="upload-grid">
+            <div class="upload-panel">
+              <div class="panel-header">
+                <div>
+                  <p class="upload-title">Upload media</p>
                 <p class="upload-tip">Drop in a photo or video. Categories are optional.</p>
               </div>
             </div>
@@ -111,6 +111,49 @@
                 <span class="progress-text">0%</span>
               </div>
               <p class="upload-status" role="status"></p>
+            </form>
+          </div>
+
+          <div class="upload-panel link-panel">
+            <div class="panel-header">
+              <div>
+                <p class="upload-title">Save a link</p>
+                <p class="upload-tip">Add an https video link to watch from here.</p>
+              </div>
+            </div>
+            <form id="linkForm" class="link-form">
+              <label class="field">
+                <span>HTTPS link</span>
+                <input
+                  type="url"
+                  id="linkUrl"
+                  name="linkUrl"
+                  inputmode="url"
+                  placeholder="https://example.com/video"
+                  aria-label="HTTPS link to a video"
+                  required
+                />
+              </label>
+              <div class="field-row">
+                <label class="field">
+                  <span>Display name (optional)</span>
+                  <input
+                    type="text"
+                    id="linkName"
+                    name="linkName"
+                    placeholder="Friendly title"
+                    aria-label="Display name for link"
+                  />
+                </label>
+                <label class="field">
+                  <span>Category (optional)</span>
+                  <select id="linkCategorySelect" aria-label="Category for link">
+                    <option value="">Uncategorized</option>
+                  </select>
+                </label>
+              </div>
+              <button type="submit">Add link</button>
+              <p class="link-status" role="status"></p>
             </form>
           </div>
 

@@ -34,6 +34,11 @@ class Settings:
         ).expanduser().resolve()
         self.category_store_path.parent.mkdir(parents=True, exist_ok=True)
 
+        self.link_store_path: Path = Path(
+            os.getenv("LINK_STORE", base_dir / "links.json")
+        ).expanduser().resolve()
+        self.link_store_path.parent.mkdir(parents=True, exist_ok=True)
+
         # Maximum upload size in bytes (default 200MB for video)
         self.max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", 200 * 1024 * 1024))
 
