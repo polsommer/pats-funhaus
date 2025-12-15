@@ -43,6 +43,47 @@ curl -X POST \
   http://localhost:8000/api/media
 ```
 
+### Deleting
+
+- Remove a single file:
+
+  ```bash
+  curl -X DELETE \
+    -H "X-Upload-Token: $UPLOAD_TOKEN" \
+    "http://localhost:8000/api/media?path=holiday/beach.jpg"
+  ```
+
+  - Returns `200` when deleted, `404` if the file is missing, and `400` when the path is invalid or the extension is not allowed.
+
+- Delete multiple files at once:
+
+  ```bash
+  curl -X DELETE \
+    -H "X-Upload-Token: $UPLOAD_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '["holiday/beach.jpg", "clips/birthday.mp4"]' \
+    http://localhost:8000/api/media/batch
+  ```
+
+  - Returns `200` when all items are removed, `207` (Multi-Status) when some files fail (the response includes per-file results), and `404` when every requested file is missing.
+
+### Categories
+
+- Rename or retarget a category:
+
+  ```bash
+  curl -X PATCH \
+    -H "Content-Type: application/json" \
+    -d '{"name": "Trips", "path": "travel"}' \
+    http://localhost:8000/api/categories/old_name
+  ```
+
+- Delete a category:
+
+  ```bash
+  curl -X DELETE http://localhost:8000/api/categories/Trips
+  ```
+
 ## Raspberry Pi deployment
 
 ### systemd service

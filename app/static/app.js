@@ -23,10 +23,17 @@ const categoryForm = document.querySelector('#categoryForm');
 const categoryInput = document.querySelector('#categoryInput');
 const categoryStatus = document.querySelector('.category-status');
 const categoryList = document.querySelector('#categoryList');
+const selectAllButton = document.querySelector('#selectAllButton');
+const clearSelectionButton = document.querySelector('#clearSelectionButton');
+const deleteSelectedButton = document.querySelector('#deleteSelectedButton');
+const toolbarStatus = document.querySelector('.toolbar-status');
 
 let allCategories = [];
 let categoryLookup = new Map();
 let cachedItems = [];
+let visibleItems = [];
+let selectedPaths = new Set();
+let isDeleting = false;
 
 filterSelect.addEventListener('change', () => applyFilters());
 
@@ -35,6 +42,10 @@ searchInput?.addEventListener('input', () => applyFilters());
 sortSelect?.addEventListener('change', () => applyFilters());
 
 shuffleButton?.addEventListener('click', () => applyFilters({ shuffle: true }));
+
+selectAllButton?.addEventListener('click', selectVisibleItems);
+clearSelectionButton?.addEventListener('click', clearSelection);
+deleteSelectedButton?.addEventListener('click', handleDeleteSelected);
 
 uploadForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -198,6 +209,7 @@ async function fetchMedia() {
     const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to load media');
     cachedItems = await res.json();
+    reconcileSelection();
     applyFilters();
   } catch (err) {
     console.error(err);
@@ -268,7 +280,9 @@ function applyFilters({ shuffle = false } = {}) {
   const matchAllCategories = selectedCategory === '__all__';
 
   if (!cachedItems.length) {
+    visibleItems = [];
     renderGrid([]);
+    updateSelectionUI();
     statusEl.textContent = 'No media uploaded yet';
     return;
   }
@@ -292,7 +306,9 @@ function applyFilters({ shuffle = false } = {}) {
     items = sortItems(items);
   }
 
+  visibleItems = items;
   renderGrid(items);
+  updateSelectionUI();
   statusEl.textContent = items.length ? '' : 'No items match your filters yet';
 }
 
@@ -317,6 +333,159 @@ function shuffleItems(items) {
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
   return copy;
+}
+
+function reconcileSelection() {
+  const validPaths = new Set(cachedItems.map((item) => item.path));
+  for (const path of Array.from(selectedPaths)) {
+    if (!validPaths.has(path)) {
+      selectedPaths.delete(path);
+    }
+  }
+  updateSelectionUI();
+}
+
+function selectVisibleItems() {
+  if (!visibleItems.length) return;
+  if (toolbarStatus) toolbarStatus.dataset.state = 'info';
+  visibleItems.forEach((item) => selectedPaths.add(item.path));
+  updateSelectionUI();
+  renderGrid(visibleItems);
+}
+
+function clearSelection() {
+  if (toolbarStatus) toolbarStatus.dataset.state = 'info';
+  selectedPaths = new Set();
+  updateSelectionUI();
+  renderGrid(visibleItems);
+}
+
+function toggleSelection(path, isSelected) {
+  if (toolbarStatus) toolbarStatus.dataset.state = 'info';
+  if (isSelected) {
+    selectedPaths.add(path);
+  } else {
+    selectedPaths.delete(path);
+  }
+  updateSelectionUI();
+}
+
+function updateSelectionUI({ preserveStatus = false } = {}) {
+  const count = selectedPaths.size;
+  if (deleteSelectedButton) {
+    deleteSelectedButton.disabled = !count || isDeleting;
+  }
+  if (clearSelectionButton) {
+    clearSelectionButton.disabled = !count || isDeleting;
+  }
+  if (selectAllButton) {
+    selectAllButton.disabled = !cachedItems.length;
+  }
+
+  const shouldUpdateStatus =
+    !preserveStatus && (!toolbarStatus?.textContent || toolbarStatus?.dataset.state === 'info');
+
+  if (shouldUpdateStatus) {
+    setToolbarStatus(
+      count ? `${count} item${count === 1 ? '' : 's'} selected` : 'No items selected',
+      'info'
+    );
+  }
+}
+
+async function handleDeleteSelected() {
+  const paths = Array.from(selectedPaths);
+  if (!paths.length || isDeleting) return;
+
+  const token = uploadTokenInput.value.trim();
+  if (!token) {
+    setToolbarStatus('Upload token is required to delete media', 'error');
+    uploadTokenInput?.focus({ preventScroll: true });
+    return;
+  }
+
+  isDeleting = true;
+  updateSelectionUI({ preserveStatus: true });
+  setToolbarStatus(`Deleting ${paths.length} item${paths.length === 1 ? '' : 's'}...`);
+
+  try {
+    let res;
+    let payload = {};
+
+    if (paths.length === 1) {
+      const url = new URL('/api/media', window.location.origin);
+      url.searchParams.set('path', paths[0]);
+      res = await fetch(url, {
+        method: 'DELETE',
+        headers: { 'X-Upload-Token': token },
+      });
+    } else {
+      res = await fetch('/api/media/batch', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Upload-Token': token,
+        },
+        body: JSON.stringify(paths),
+      });
+    }
+
+    payload = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const detail = payload.detail || payload.message || 'Unable to delete selection';
+      throw new Error(detail);
+    }
+
+    if (paths.length === 1) {
+      setToolbarStatus(`Deleted ${payload.path || paths[0]}`, 'success');
+      selectedPaths = new Set();
+    } else {
+      const results = Array.isArray(payload.results) ? payload.results : [];
+      const summary = formatDeletionResults(results, paths.length);
+      const state = res.status === 207 ? 'error' : 'success';
+      setToolbarStatus(summary, state);
+      retainFailedSelections(results);
+    }
+
+    await fetchMedia();
+  } catch (err) {
+    console.error(err);
+    setToolbarStatus(err.message || 'Unable to delete selection', 'error');
+  } finally {
+    isDeleting = false;
+    updateSelectionUI({ preserveStatus: true });
+  }
+}
+
+function retainFailedSelections(results) {
+  if (!Array.isArray(results)) {
+    selectedPaths = new Set();
+    return;
+  }
+  const failed = results
+    .filter((result) => result.status === 'error')
+    .map((result) => result.path)
+    .filter(Boolean);
+  selectedPaths = new Set(failed);
+}
+
+function formatDeletionResults(results, requestedCount) {
+  if (!Array.isArray(results) || !results.length) {
+    return `Deleted ${requestedCount} item${requestedCount === 1 ? '' : 's'}`;
+  }
+
+  const successes = results.filter((result) => result.status === 'success').length;
+  const errors = results.length - successes;
+  const errorDetails = results
+    .filter((result) => result.status === 'error')
+    .map((result) => `${result.path}: ${result.message}`)
+    .slice(0, 3)
+    .join('; ');
+
+  if (!errors) return `Deleted ${successes} item${successes === 1 ? '' : 's'}`;
+
+  return `${successes} deleted, ${errors} failed${errorDetails ? ` (${errorDetails})` : ''}`;
 }
 
 function renderSelectOptions(select, categories, { includeAll = false } = {}) {
@@ -350,13 +519,116 @@ function renderCategoryList(categories) {
   for (const category of categories) {
     const item = document.createElement('li');
     item.className = 'category-chip';
-    item.textContent = category.name;
-    item.addEventListener('click', () => {
+
+    const labelButton = document.createElement('button');
+    labelButton.type = 'button';
+    labelButton.className = 'label';
+    labelButton.textContent = category.name;
+    labelButton.setAttribute('aria-label', `Filter by ${category.name}`);
+    labelButton.addEventListener('click', () => {
       filterSelect.value = category.path || '';
       uploadCategorySelect.value = category.path || '';
       applyFilters();
     });
+
+    if (category.path) {
+      const actions = document.createElement('div');
+      actions.className = 'category-actions';
+
+      const renameButton = document.createElement('button');
+      renameButton.type = 'button';
+      renameButton.textContent = 'Rename';
+      renameButton.setAttribute('aria-label', `Rename ${category.name}`);
+      renameButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        promptRenameCategory(category);
+      });
+
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.textContent = 'Delete';
+      deleteButton.setAttribute('aria-label', `Delete ${category.name}`);
+      deleteButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        removeCategory(category);
+      });
+
+      actions.append(renameButton, deleteButton);
+      item.append(labelButton, actions);
+    } else {
+      item.append(labelButton);
+    }
     categoryList.appendChild(item);
+  }
+}
+
+async function removeCategory(category) {
+  try {
+    setCategoryStatus(`Deleting ${category.name}...`);
+    const res = await fetch(`/api/categories/${encodeURIComponent(category.name)}`, { method: 'DELETE' });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(payload.detail || 'Unable to delete category');
+    }
+
+    const wasSelected = filterSelect.value === (category.path || '');
+    if (wasSelected) {
+      filterSelect.value = '__all__';
+      uploadCategorySelect.value = '';
+      applyFilters();
+    }
+
+    setCategoryStatus('Category deleted', 'success');
+    await fetchCategories({ preserveSelection: true });
+  } catch (err) {
+    console.error(err);
+    setCategoryStatus(err.message || 'Unable to delete category', 'error');
+  }
+}
+
+async function promptRenameCategory(category) {
+  const newName = window.prompt('Rename category', category.name);
+  if (newName === null) return;
+
+  const trimmedName = newName.trim();
+  const payload = {};
+  if (trimmedName && trimmedName !== category.name) {
+    payload.name = trimmedName;
+  }
+
+  const newPath = window.prompt('Update folder name (leave blank to keep current)', category.path || category.name);
+  if (newPath !== null) {
+    const trimmedPath = newPath.trim();
+    if (trimmedPath && trimmedPath !== category.path) {
+      payload.path = trimmedPath;
+    }
+  }
+
+  if (!payload.name && !payload.path) {
+    setCategoryStatus('No changes to apply', 'info');
+    return;
+  }
+
+  try {
+    setCategoryStatus('Updating category...');
+    const res = await fetch(`/api/categories/${encodeURIComponent(category.name)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const updatedCategory = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(updatedCategory.detail || 'Unable to rename category');
+    }
+
+    const newSelection = updatedCategory.path || payload.path || payload.name || category.path || '';
+    setCategoryStatus('Category updated', 'success');
+    await fetchCategories({ preserveSelection: false, newSelection });
+    applyFilters();
+  } catch (err) {
+    console.error(err);
+    setCategoryStatus(err.message || 'Unable to rename category', 'error');
   }
 }
 
@@ -365,6 +637,8 @@ function renderGrid(items) {
   for (const item of items) {
     const card = document.createElement('article');
     card.className = 'card';
+    card.dataset.selected = selectedPaths.has(item.path);
+    card.tabIndex = 0;
 
     const isVideo = item.mime_type.startsWith('video');
     const mediaEl = document.createElement(isVideo ? 'video' : 'img');
@@ -376,6 +650,24 @@ function renderGrid(items) {
       mediaEl.autoplay = true;
     }
 
+    const selectToggle = document.createElement('label');
+    selectToggle.className = 'select-toggle';
+    selectToggle.setAttribute('aria-label', `Select ${item.name}`);
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = selectedPaths.has(item.path);
+    checkbox.addEventListener('click', (event) => event.stopPropagation());
+    checkbox.addEventListener('change', (event) => {
+      const checked = event.target.checked;
+      toggleSelection(item.path, checked);
+      card.dataset.selected = checked;
+    });
+
+    const checkboxLabel = document.createElement('span');
+    checkboxLabel.textContent = 'Select';
+    selectToggle.append(checkbox, checkboxLabel);
+
     const meta = document.createElement('div');
     meta.className = 'meta';
     const categoryLabel = getCategoryLabel(item.category_path, item.category);
@@ -385,8 +677,18 @@ function renderGrid(items) {
       <span>${new Date(item.modified).toLocaleString()}</span>
     `;
 
-    card.append(mediaEl, meta);
-    card.addEventListener('click', () => openModal(item));
+    card.append(selectToggle, mediaEl, meta);
+    card.addEventListener('click', (event) => {
+      if (event.target.closest('.select-toggle')) return;
+      openModal(item);
+    });
+    card.addEventListener('keydown', (event) => {
+      if (event.target !== card) return;
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openModal(item);
+      }
+    });
     grid.appendChild(card);
   }
 }
@@ -406,6 +708,12 @@ function setCategoryStatus(message, state = 'info') {
   categoryStatus.classList.remove('pop');
   void categoryStatus.offsetWidth;
   categoryStatus.classList.add('pop');
+}
+
+function setToolbarStatus(message, state = 'info') {
+  if (!toolbarStatus) return;
+  toolbarStatus.textContent = message;
+  toolbarStatus.dataset.state = state;
 }
 
 function updateProgress(percent, label) {
@@ -502,5 +810,6 @@ heroUploadButton?.addEventListener('click', (event) => {
   window.requestAnimationFrame(() => uploadTokenInput?.focus({ preventScroll: true }));
 });
 
+updateSelectionUI();
 fetchCategories();
 fetchMedia();

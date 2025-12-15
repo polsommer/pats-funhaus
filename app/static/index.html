@@ -136,7 +136,7 @@
               <button type="submit">Add</button>
             </form>
             <p class="category-status" role="status"></p>
-            <ul id="categoryList" class="category-list"></ul>
+            <ul id="categoryList" class="category-list" aria-label="Categories"></ul>
           </div>
         </div>
       </div>
@@ -147,6 +147,18 @@
         <p class="eyebrow">Gallery</p>
         <h2>Your media hub</h2>
         <p class="upload-subtext">Every clip and snapshot stays organized with simple category filters.</p>
+      </div>
+      <div class="gallery-toolbar" aria-label="Gallery selection tools">
+        <div class="selection-controls">
+          <button type="button" id="selectAllButton" aria-label="Select all media">Select all</button>
+          <button type="button" id="clearSelectionButton" aria-label="Clear selected media">Clear selection</button>
+        </div>
+        <div class="toolbar-actions">
+          <button type="button" id="deleteSelectedButton" class="danger" disabled aria-label="Delete selected media">
+            Delete selected
+          </button>
+          <p class="toolbar-status" role="status" aria-live="polite"></p>
+        </div>
       </div>
       <div class="grid" aria-live="polite"></div>
       <p class="status"></p>
