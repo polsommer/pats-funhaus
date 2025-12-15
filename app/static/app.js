@@ -785,7 +785,16 @@ function openModal(item) {
   modalContent.innerHTML = '';
   const isVideo = item.mime_type.startsWith('video');
   const mediaEl = document.createElement(isVideo ? 'video' : 'img');
-  mediaEl.src = getResolvedMediaUrl(item.url);
+  const previewUrl = getPreviewUrl(item);
+  const fullUrl = getResolvedMediaUrl(item.url);
+
+  mediaEl.src = fullUrl;
+  if (!isVideo) {
+    mediaEl.loading = 'lazy';
+    mediaEl.decoding = 'async';
+  } else if (previewUrl) {
+    mediaEl.poster = previewUrl;
+  }
   if (isVideo) {
     mediaEl.controls = true;
     mediaEl.playsInline = true;
@@ -816,9 +825,18 @@ fetchMedia();
 function createMediaElement(item) {
   const isVideo = item.mime_type.startsWith('video');
   const mediaEl = document.createElement(isVideo ? 'video' : 'img');
-  const sourceUrl = getResolvedMediaUrl(item.url);
+  const previewUrl = getPreviewUrl(item);
+  const fullUrl = getResolvedMediaUrl(item.url);
+  const posterUrl = getPosterUrl(item);
 
-  mediaEl.dataset.src = sourceUrl;
+  if (previewUrl) {
+    mediaEl.dataset.src = previewUrl;
+  }
+  mediaEl.dataset.fullSrc = fullUrl;
+  if (posterUrl) {
+    mediaEl.dataset.poster = posterUrl;
+    mediaEl.poster = posterUrl;
+  }
 
   if (isVideo) {
     mediaEl.muted = true;
@@ -851,27 +869,46 @@ function handleMediaVisibility(entries) {
         }
       }
 
-      if (isVideo) {
+      if (isVideo && el.dataset.shouldPlay === 'true') {
         el.play().catch(() => {});
       }
     } else if (isVideo) {
-      el.pause();
+      stopVideoPlayback(el);
     }
   });
 }
 
 function registerMediaElement(mediaEl, isVideo) {
   mediaEl.dataset.intersecting = 'false';
+  if (isVideo) {
+    mediaEl.dataset.shouldPlay = 'false';
+  }
   mediaObserver.observe(mediaEl);
 
   if (isVideo && !mediaEl.dataset.playHandlerAttached) {
     mediaEl.addEventListener('loadeddata', () => {
-      if (mediaEl.dataset.intersecting === 'true') {
+      if (mediaEl.dataset.intersecting === 'true' && mediaEl.dataset.shouldPlay === 'true') {
         mediaEl.play().catch(() => {});
       }
     });
+    mediaEl.addEventListener('pointerenter', () => requestVideoPlayback(mediaEl));
+    mediaEl.addEventListener('pointerleave', () => stopVideoPlayback(mediaEl));
+    mediaEl.addEventListener('focus', () => requestVideoPlayback(mediaEl));
+    mediaEl.addEventListener('blur', () => stopVideoPlayback(mediaEl));
     mediaEl.dataset.playHandlerAttached = 'true';
   }
+}
+
+function requestVideoPlayback(videoEl) {
+  videoEl.dataset.shouldPlay = 'true';
+  if (videoEl.dataset.intersecting === 'true') {
+    videoEl.play().catch(() => {});
+  }
+}
+
+function stopVideoPlayback(videoEl) {
+  videoEl.dataset.shouldPlay = 'false';
+  videoEl.pause();
 }
 
 function getResolvedMediaUrl(url) {
@@ -884,4 +921,14 @@ function getResolvedMediaUrl(url) {
     console.error('Failed to resolve media URL', error);
     return url;
   }
+}
+
+function getPreviewUrl(item) {
+  const previewCandidate = item.thumbnail_url || item.preview_url || item.poster || item.url;
+  return getResolvedMediaUrl(previewCandidate);
+}
+
+function getPosterUrl(item) {
+  const posterCandidate = item.poster || item.thumbnail_url || item.preview_url;
+  return posterCandidate ? getResolvedMediaUrl(posterCandidate) : null;
 }
