@@ -35,6 +35,11 @@ let visibleItems = [];
 let selectedPaths = new Set();
 let isDeleting = false;
 
+const mediaObserver = new IntersectionObserver(handleMediaVisibility, {
+  rootMargin: '200px 0px',
+  threshold: 0.25,
+});
+
 filterSelect.addEventListener('change', () => applyFilters());
 
 searchInput?.addEventListener('input', () => applyFilters());
@@ -633,6 +638,7 @@ async function promptRenameCategory(category) {
 }
 
 function renderGrid(items) {
+  mediaObserver.disconnect();
   grid.innerHTML = '';
   for (const item of items) {
     const card = document.createElement('article');
@@ -640,15 +646,7 @@ function renderGrid(items) {
     card.dataset.selected = selectedPaths.has(item.path);
     card.tabIndex = 0;
 
-    const isVideo = item.mime_type.startsWith('video');
-    const mediaEl = document.createElement(isVideo ? 'video' : 'img');
-    mediaEl.src = item.url;
-    if (isVideo) {
-      mediaEl.muted = true;
-      mediaEl.playsInline = true;
-      mediaEl.loop = true;
-      mediaEl.autoplay = true;
-    }
+    const { mediaEl, isVideo } = createMediaElement(item);
 
     const selectToggle = document.createElement('label');
     selectToggle.className = 'select-toggle';
@@ -787,10 +785,11 @@ function openModal(item) {
   modalContent.innerHTML = '';
   const isVideo = item.mime_type.startsWith('video');
   const mediaEl = document.createElement(isVideo ? 'video' : 'img');
-  mediaEl.src = item.url;
+  mediaEl.src = getResolvedMediaUrl(item.url);
   if (isVideo) {
     mediaEl.controls = true;
     mediaEl.playsInline = true;
+    mediaEl.autoplay = true;
   }
   modalContent.append(mediaEl, closeBtn);
 }
@@ -813,3 +812,76 @@ heroUploadButton?.addEventListener('click', (event) => {
 updateSelectionUI();
 fetchCategories();
 fetchMedia();
+
+function createMediaElement(item) {
+  const isVideo = item.mime_type.startsWith('video');
+  const mediaEl = document.createElement(isVideo ? 'video' : 'img');
+  const sourceUrl = getResolvedMediaUrl(item.url);
+
+  mediaEl.dataset.src = sourceUrl;
+
+  if (isVideo) {
+    mediaEl.muted = true;
+    mediaEl.playsInline = true;
+    mediaEl.loop = true;
+    mediaEl.preload = 'none';
+  } else {
+    mediaEl.alt = item.name;
+    mediaEl.loading = 'lazy';
+    mediaEl.decoding = 'async';
+  }
+
+  registerMediaElement(mediaEl, isVideo);
+
+  return { mediaEl, isVideo };
+}
+
+function handleMediaVisibility(entries) {
+  entries.forEach((entry) => {
+    const el = entry.target;
+    const isVideo = el.tagName === 'VIDEO';
+    el.dataset.intersecting = entry.isIntersecting ? 'true' : 'false';
+
+    if (entry.isIntersecting) {
+      if (!el.dataset.loaded && el.dataset.src) {
+        el.src = el.dataset.src;
+        el.dataset.loaded = 'true';
+        if (isVideo) {
+          el.preload = 'metadata';
+        }
+      }
+
+      if (isVideo) {
+        el.play().catch(() => {});
+      }
+    } else if (isVideo) {
+      el.pause();
+    }
+  });
+}
+
+function registerMediaElement(mediaEl, isVideo) {
+  mediaEl.dataset.intersecting = 'false';
+  mediaObserver.observe(mediaEl);
+
+  if (isVideo && !mediaEl.dataset.playHandlerAttached) {
+    mediaEl.addEventListener('loadeddata', () => {
+      if (mediaEl.dataset.intersecting === 'true') {
+        mediaEl.play().catch(() => {});
+      }
+    });
+    mediaEl.dataset.playHandlerAttached = 'true';
+  }
+}
+
+function getResolvedMediaUrl(url) {
+  try {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    return new URL(url, window.location.origin).toString();
+  } catch (error) {
+    console.error('Failed to resolve media URL', error);
+    return url;
+  }
+}
