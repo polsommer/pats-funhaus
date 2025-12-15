@@ -23,6 +23,11 @@ const categoryForm = document.querySelector('#categoryForm');
 const categoryInput = document.querySelector('#categoryInput');
 const categoryStatus = document.querySelector('.category-status');
 const categoryList = document.querySelector('#categoryList');
+const linkForm = document.querySelector('#linkForm');
+const linkUrlInput = document.querySelector('#linkUrl');
+const linkNameInput = document.querySelector('#linkName');
+const linkCategorySelect = document.querySelector('#linkCategorySelect');
+const linkStatus = document.querySelector('.link-status');
 const selectAllButton = document.querySelector('#selectAllButton');
 const clearSelectionButton = document.querySelector('#clearSelectionButton');
 const deleteSelectedButton = document.querySelector('#deleteSelectedButton');
@@ -160,6 +165,55 @@ categoryForm?.addEventListener('submit', async (event) => {
   }
 });
 
+linkForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const tokenValue = uploadTokenInput.value.trim();
+  const url = linkUrlInput.value.trim();
+  const name = linkNameInput.value.trim();
+  const category = linkCategorySelect.value.trim();
+
+  if (!tokenValue) {
+    setLinkStatus('Upload token is required', 'error');
+    return;
+  }
+
+  if (!url) {
+    setLinkStatus('Enter an https link to save', 'error');
+    return;
+  }
+
+  if (!url.toLowerCase().startsWith('https://')) {
+    setLinkStatus('Only https links are supported', 'error');
+    return;
+  }
+
+  try {
+    setLinkStatus('Saving link...');
+    const res = await fetch('/api/links', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Upload-Token': tokenValue,
+      },
+      body: JSON.stringify({ url, name, category }),
+    });
+
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = payload.detail || payload.message || 'Unable to save link';
+      throw new Error(detail);
+    }
+
+    setLinkStatus('Link saved', 'success');
+    linkForm.reset();
+    linkUrlInput.focus({ preventScroll: true });
+    await fetchMedia();
+  } catch (err) {
+    console.error(err);
+    setLinkStatus(err.message || 'Unable to save link', 'error');
+  }
+});
+
 function uploadMedia(formData, token, { onProgress } = {}) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -276,6 +330,7 @@ function setCategories(categories) {
 
   renderSelectOptions(filterSelect, allCategories, { includeAll: true });
   renderSelectOptions(uploadCategorySelect, allCategories, { includeAll: false });
+  renderSelectOptions(linkCategorySelect, allCategories, { includeAll: false });
   renderCategoryList(allCategories);
 }
 
@@ -699,6 +754,15 @@ function setUploadStatus(message, state = 'info') {
   uploadStatus.classList.add('pop');
 }
 
+function setLinkStatus(message, state = 'info') {
+  if (!linkStatus) return;
+  linkStatus.textContent = message;
+  linkStatus.dataset.state = state;
+  linkStatus.classList.remove('pop');
+  void linkStatus.offsetWidth;
+  linkStatus.classList.add('pop');
+}
+
 function setCategoryStatus(message, state = 'info') {
   if (!categoryStatus) return;
   categoryStatus.textContent = message;
@@ -781,6 +845,12 @@ function getCategoryLabel(categoryPath, fallbackName) {
 }
 
 function openModal(item) {
+  if (item.source === 'link') {
+    const targetUrl = getResolvedMediaUrl(item.url);
+    window.open(targetUrl, '_blank', 'noopener');
+    modal.classList.remove('open');
+    return;
+  }
   modal.classList.add('open');
   modalContent.innerHTML = '';
   const isVideo = item.mime_type.startsWith('video');
@@ -823,6 +893,26 @@ fetchCategories();
 fetchMedia();
 
 function createMediaElement(item) {
+  if (item.source === 'link') {
+    const preview = document.createElement('div');
+    preview.className = 'link-preview';
+
+    const host = document.createElement('div');
+    host.className = 'link-host';
+    host.textContent = item.name || 'Link';
+
+    const domain = document.createElement('div');
+    domain.className = 'link-domain';
+    domain.textContent = item.domain || item.url;
+
+    const hint = document.createElement('span');
+    hint.className = 'open-hint';
+    hint.textContent = 'Open link';
+
+    preview.append(host, domain, hint);
+    return { mediaEl: preview, isVideo: false };
+  }
+
   const isVideo = item.mime_type.startsWith('video');
   const mediaEl = document.createElement(isVideo ? 'video' : 'img');
   const previewUrl = getPreviewUrl(item);
