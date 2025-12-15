@@ -319,12 +319,17 @@ def _stream_to_disk(upload: UploadFile, target_path: Path, chunk_size: int = 102
 
 def _resolve_target_path(filename: str, target_dir: Path) -> Path:
     safe_name = Path(filename).name
+    safe_path = Path(safe_name)
 
-    if safe_name != filename or not safe_name or not Path(safe_name).stem:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+    if safe_name != filename or not safe_name or not safe_path.stem:
+        raise HTTPException(
+            status_code=400,
+            detail="Filename cannot contain path separators and must include a name",
+        )
 
-    stem = Path(safe_name).stem
-    suffix = Path(safe_name).suffix
+    target_dir = target_dir.resolve()
+    stem = safe_path.stem
+    suffix = safe_path.suffix
 
     counter = 0
     while True:
