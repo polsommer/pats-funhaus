@@ -318,14 +318,28 @@ def _stream_to_disk(upload: UploadFile, target_path: Path, chunk_size: int = 102
 
 
 def _resolve_target_path(filename: str, target_dir: Path) -> Path:
-    target_path = target_dir / filename
-    counter = 1
-    while target_path.exists():
-        stem = Path(filename).stem
-        suffix = Path(filename).suffix
-        target_path = target_dir / f"{stem}_{counter}{suffix}"
+    safe_name = Path(filename).name
+
+    if safe_name != filename or not safe_name or not Path(safe_name).stem:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    stem = Path(safe_name).stem
+    suffix = Path(safe_name).suffix
+
+    counter = 0
+    while True:
+        candidate_name = safe_name if counter == 0 else f"{stem}_{counter}{suffix}"
+        candidate_path = (target_dir / candidate_name).resolve()
+
+        try:
+            candidate_path.relative_to(settings.media_dir)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail="Path must be inside media directory") from error
+
+        if not candidate_path.exists():
+            return candidate_path
+
         counter += 1
-    return target_path
 
 
 def _validate_media_path(relative_path: str) -> Path:
