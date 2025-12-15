@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import (
+    Body,
     Depends,
     FastAPI,
     File,
@@ -134,12 +135,45 @@ class CategoryStore:
                 return removed_category
         raise KeyError("Category not found")
 
+    def update(self, name: str, new_name: str | None, new_path: str | None) -> Category:
+        normalized_current = normalize_category(name)
+        if normalized_current is None:
+            raise KeyError("Category not found")
+
+        category = self.get_by_name(normalized_current)
+        if category is None:
+            raise KeyError("Category not found")
+
+        candidate_name = normalize_category(new_name) if new_name is not None else category.name
+        candidate_path = normalize_category(new_path) if new_path is not None else category.path
+
+        if candidate_name is None or candidate_path is None:
+            raise ValueError("Invalid category name or path")
+
+        for existing in self.categories:
+            if existing is category:
+                continue
+            if existing.name == candidate_name:
+                raise ValueError("Category name already exists")
+            if existing.path == candidate_path:
+                raise ValueError("Category path already exists")
+
+        category.name = candidate_name
+        category.path = candidate_path
+        self._persist()
+        return category
+
 
 category_store = CategoryStore(settings.category_store_path, settings.category_map)
 
 
 class CreateCategoryRequest(BaseModel):
     name: str
+    path: str | None = None
+
+
+class UpdateCategoryRequest(BaseModel):
+    name: str | None = None
     path: str | None = None
 
 
@@ -294,6 +328,112 @@ def _resolve_target_path(filename: str, target_dir: Path) -> Path:
     return target_path
 
 
+def _validate_media_path(relative_path: str) -> Path:
+    if not relative_path:
+        raise HTTPException(status_code=400, detail="Path is required")
+
+    target_path = (settings.media_dir / relative_path).resolve()
+
+    try:
+        target_path.relative_to(settings.media_dir)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="Path must be inside media directory") from error
+
+    if not is_allowed_file(target_path.name):
+        raise HTTPException(status_code=400, detail="File type not allowed")
+
+    return target_path
+
+
+@app.delete("/api/media")
+def delete_media(
+    path: Annotated[str, Query(alias="path")],
+    _: None = Depends(verify_token),
+) -> dict[str, str]:
+    target_path = _validate_media_path(path)
+
+    if not target_path.is_file():
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    target_path.unlink()
+    return {"message": "Deleted", "path": str(target_path.relative_to(settings.media_dir))}
+
+
+@app.delete("/api/media/batch")
+def delete_media_batch(
+    payload: Annotated[list[str], Body(..., embed=False)],
+    response: Response,
+    _: None = Depends(verify_token),
+) -> dict[str, list[dict[str, str | int]]]:
+    if not isinstance(payload, list) or not payload:
+        raise HTTPException(status_code=400, detail="Provide at least one path to delete")
+
+    results: list[dict[str, str | int]] = []
+
+    for raw_path in payload:
+        try:
+            target_path = _validate_media_path(raw_path)
+        except HTTPException as error:
+            results.append(
+                {
+                    "path": raw_path,
+                    "status": "error",
+                    "message": error.detail if isinstance(error.detail, str) else "Invalid path",
+                    "code": error.status_code,
+                }
+            )
+            continue
+
+        if not target_path.is_file():
+            results.append(
+                {
+                    "path": raw_path,
+                    "status": "error",
+                    "message": "Media not found",
+                    "code": 404,
+                }
+            )
+            continue
+
+        try:
+            target_path.unlink()
+            results.append(
+                {
+                    "path": str(target_path.relative_to(settings.media_dir)),
+                    "status": "success",
+                    "message": "Deleted",
+                    "code": 200,
+                }
+            )
+        except Exception:
+            results.append(
+                {
+                    "path": raw_path,
+                    "status": "error",
+                    "message": "Failed to delete file",
+                    "code": 500,
+                }
+            )
+
+    has_success = any(result.get("status") == "success" for result in results)
+    errors = [result for result in results if result.get("status") == "error"]
+
+    if has_success and errors:
+        response.status_code = 207
+    elif has_success:
+        response.status_code = 200
+    else:
+        codes = {result.get("code") for result in results if result.get("code")}
+        if codes == {404}:
+            response.status_code = 404
+        elif codes:
+            response.status_code = min(codes)
+        else:
+            response.status_code = 400
+
+    return {"results": results}
+
+
 @app.get("/api/categories")
 def list_categories() -> list[Category]:
     return category_store.list()
@@ -313,6 +453,19 @@ def delete_category(name: str) -> Category:
         return category_store.delete(name)
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.patch("/api/categories/{name}")
+def update_category(name: str, payload: UpdateCategoryRequest) -> Category:
+    if payload.name is None and payload.path is None:
+        raise HTTPException(status_code=400, detail="No updates provided")
+
+    try:
+        return category_store.update(name, payload.name, payload.path)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.get("/")
