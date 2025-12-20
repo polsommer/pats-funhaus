@@ -96,6 +96,34 @@ let slideshowTimer = null;
 let slideshowItems = [];
 let slideshowIndex = 0;
 let slideshowDelayMs = 4500;
+let isFullscreenActive = false;
+const fullscreenApis = [
+  {
+    request: 'requestFullscreen',
+    exit: 'exitFullscreen',
+    element: 'fullscreenElement',
+    change: 'fullscreenchange',
+  },
+  {
+    request: 'webkitRequestFullscreen',
+    exit: 'webkitExitFullscreen',
+    element: 'webkitFullscreenElement',
+    change: 'webkitfullscreenchange',
+  },
+  {
+    request: 'mozRequestFullScreen',
+    exit: 'mozCancelFullScreen',
+    element: 'mozFullScreenElement',
+    change: 'mozfullscreenchange',
+  },
+  {
+    request: 'msRequestFullscreen',
+    exit: 'msExitFullscreen',
+    element: 'msFullscreenElement',
+    change: 'MSFullscreenChange',
+  },
+];
+let fullscreenApi = null;
 
 filterSelect.addEventListener('change', () => applyFilters());
 
@@ -578,6 +606,7 @@ function startSlideshow() {
     'info'
   );
 
+  enterFullscreenForSlideshow();
   openModal(slideshowItems[slideshowIndex], { fromSlideshow: true });
   restartSlideshowTimer();
 }
@@ -589,6 +618,7 @@ function stopSlideshow({ silent = false } = {}) {
   }
   slideshowItems = [];
   setSlideshowButtonState(false);
+  exitSlideshowFullscreen();
   if (!silent) {
     setToolbarStatus('Auto display stopped', 'info');
   }
@@ -631,6 +661,28 @@ function updateSlideshowDelayLabel(seconds) {
 
 function formatSeconds(seconds) {
   return seconds % 1 === 0 ? `${seconds.toFixed(0)}s` : `${seconds.toFixed(1)}s`;
+}
+
+function resolveFullscreenApi() {
+  if (fullscreenApi) return fullscreenApi;
+  const target = document.documentElement;
+  fullscreenApi = fullscreenApis.find(({ request }) => target && typeof target[request] === 'function') || null;
+  return fullscreenApi;
+}
+
+function getActiveFullscreenElement() {
+  const api = resolveFullscreenApi();
+  if (!api) return document.fullscreenElement || null;
+  return document[api.element] || document.fullscreenElement || null;
+}
+
+function watchFullscreenChanges() {
+  fullscreenApis.forEach(({ change }) => {
+    if (!change) return;
+    document.addEventListener(change, () => {
+      isFullscreenActive = Boolean(getActiveFullscreenElement());
+    });
+  });
 }
 
 async function handleDeleteSelected() {
@@ -1080,6 +1132,7 @@ function openModal(item, { fromSlideshow = false } = {}) {
 
 function closeModal({ stopAutoDisplay = true } = {}) {
   modal.classList.remove('open');
+  exitSlideshowFullscreen();
   if (stopAutoDisplay && slideshowTimer) {
     stopSlideshow({ silent: true });
   }
@@ -1093,6 +1146,33 @@ modal.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeModal();
 });
+
+async function enterFullscreenForSlideshow() {
+  if (isFullscreenActive) return;
+  const api = resolveFullscreenApi();
+  const target = document.documentElement;
+  if (!api || !target) return;
+  try {
+    const requestFn = target[api.request];
+    const request = typeof requestFn === 'function' ? requestFn.call(target) : null;
+    if (request && typeof request.then === 'function') {
+      await request;
+    }
+    isFullscreenActive = Boolean(getActiveFullscreenElement());
+  } catch (error) {
+    isFullscreenActive = false;
+  }
+}
+
+function exitSlideshowFullscreen() {
+  if (!isFullscreenActive) return;
+  const api = resolveFullscreenApi();
+  const exitMethod = api ? document[api.exit] : null;
+  if (typeof exitMethod === 'function') {
+    exitMethod.call(document);
+  }
+  isFullscreenActive = false;
+}
 
 if (heroUploadButton) {
   heroUploadButton.addEventListener('click', (event) => {
@@ -1108,6 +1188,7 @@ if (heroUploadButton) {
   });
 }
 
+watchFullscreenChanges();
 updateSelectionUI();
 fetchCategories();
 fetchMedia();
