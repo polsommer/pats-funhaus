@@ -688,6 +688,27 @@ main {
   cursor: not-allowed;
 }
 
+.gallery-toolbar .slideshow-button {
+  background: linear-gradient(135deg, rgba(255, 214, 165, 0.7), rgba(255, 129, 120, 0.75));
+  border-color: rgba(255, 129, 120, 0.55);
+  color: #1f1f3a;
+  box-shadow: 0 10px 26px rgba(255, 171, 133, 0.28);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.slideshow-button::after {
+  content: '⟳';
+  margin-left: 0.35rem;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.slideshow-button[data-active='true'] {
+  border-color: rgba(99, 102, 241, 0.7);
+  box-shadow: 0 12px 28px rgba(99, 102, 241, 0.28);
+  transform: translateY(-1px);
+}
+
 .gallery-toolbar .danger {
   background: linear-gradient(135deg, rgba(255, 159, 127, 0.35), rgba(255, 107, 107, 0.2));
   border-color: rgba(255, 107, 107, 0.5);
