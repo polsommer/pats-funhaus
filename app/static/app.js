@@ -96,7 +96,6 @@ let slideshowTimer = null;
 let slideshowItems = [];
 let slideshowIndex = 0;
 let slideshowDelayMs = 4500;
-let isFullscreenActive = false;
 
 filterSelect.addEventListener('change', () => applyFilters());
 
@@ -579,7 +578,6 @@ function startSlideshow() {
     'info'
   );
 
-  enterFullscreenForSlideshow();
   openModal(slideshowItems[slideshowIndex], { fromSlideshow: true });
   restartSlideshowTimer();
 }
@@ -591,7 +589,6 @@ function stopSlideshow({ silent = false } = {}) {
   }
   slideshowItems = [];
   setSlideshowButtonState(false);
-  exitSlideshowFullscreen();
   if (!silent) {
     setToolbarStatus('Auto display stopped', 'info');
   }
@@ -1083,7 +1080,6 @@ function openModal(item, { fromSlideshow = false } = {}) {
 
 function closeModal({ stopAutoDisplay = true } = {}) {
   modal.classList.remove('open');
-  exitSlideshowFullscreen();
   if (stopAutoDisplay && slideshowTimer) {
     stopSlideshow({ silent: true });
   }
@@ -1097,31 +1093,6 @@ modal.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeModal();
 });
-
-document.addEventListener('fullscreenchange', () => {
-  if (!document.fullscreenElement) {
-    isFullscreenActive = false;
-  }
-});
-
-async function enterFullscreenForSlideshow() {
-  if (isFullscreenActive || !document.documentElement?.requestFullscreen) return;
-  try {
-    await document.documentElement.requestFullscreen();
-    isFullscreenActive = true;
-  } catch (error) {
-    isFullscreenActive = false;
-  }
-}
-
-function exitSlideshowFullscreen() {
-  if (!isFullscreenActive) return;
-  const exitMethod = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
-  if (typeof exitMethod === 'function') {
-    exitMethod.call(document);
-  }
-  isFullscreenActive = false;
-}
 
 if (heroUploadButton) {
   heroUploadButton.addEventListener('click', (event) => {

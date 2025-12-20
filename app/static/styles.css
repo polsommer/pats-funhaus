@@ -1002,16 +1002,9 @@ main {
 }
 
 .modal[data-slideshow='true'] .modal-content {
-  width: min(1800px, 98vw);
-  max-height: 96vh;
-  padding: 0;
+  width: min(1600px, 96vw);
   border-color: rgba(99, 102, 241, 0.5);
   box-shadow: 0 40px 110px rgba(0, 0, 0, 0.55);
-}
-
-.modal[data-slideshow='true'] {
-  padding: 0.35rem;
-  background: rgba(5, 8, 20, 0.88);
 }
 
 .modal-content img,
