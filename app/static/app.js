@@ -1,3 +1,45 @@
+const supportsFetch = typeof window.fetch === 'function';
+
+function legacyFetch(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const method = (options.method || 'GET').toUpperCase();
+    const targetUrl = typeof url === 'string' ? url : url.toString();
+
+    xhr.open(method, targetUrl, true);
+
+    const headers = options.headers || {};
+    if (headers instanceof Headers) {
+      headers.forEach((value, key) => xhr.setRequestHeader(key, value));
+    } else if (typeof headers === 'object') {
+      Object.keys(headers).forEach((key) => xhr.setRequestHeader(key, headers[key]));
+    }
+
+    xhr.onload = () => {
+      const text = xhr.responseText || '';
+      const response = {
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+        json: () => {
+          if (!text) return Promise.resolve({});
+          try {
+            return Promise.resolve(JSON.parse(text));
+          } catch (error) {
+            return Promise.reject(error);
+          }
+        },
+        text: () => Promise.resolve(text),
+      };
+      resolve(response);
+    };
+
+    xhr.onerror = () => reject(new Error('Network request failed'));
+    xhr.send(options.body || null);
+  });
+}
+
+const httpFetch = supportsFetch ? window.fetch.bind(window) : legacyFetch;
+
 const grid = document.querySelector('.grid');
 const statusEl = document.querySelector('.status');
 const modal = document.querySelector('.modal');
@@ -50,15 +92,15 @@ let isDeleting = false;
 
 filterSelect.addEventListener('change', () => applyFilters());
 
-searchInput?.addEventListener('input', () => applyFilters());
+if (searchInput) searchInput.addEventListener('input', () => applyFilters());
 
-sortSelect?.addEventListener('change', () => applyFilters());
+if (sortSelect) sortSelect.addEventListener('change', () => applyFilters());
 
-shuffleButton?.addEventListener('click', () => applyFilters({ shuffle: true }));
+if (shuffleButton) shuffleButton.addEventListener('click', () => applyFilters({ shuffle: true }));
 
-selectAllButton?.addEventListener('click', selectVisibleItems);
-clearSelectionButton?.addEventListener('click', clearSelection);
-deleteSelectedButton?.addEventListener('click', handleDeleteSelected);
+if (selectAllButton) selectAllButton.addEventListener('click', selectVisibleItems);
+if (clearSelectionButton) clearSelectionButton.addEventListener('click', clearSelection);
+if (deleteSelectedButton) deleteSelectedButton.addEventListener('click', handleDeleteSelected);
 
 uploadForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -136,86 +178,96 @@ uploadFileInput.addEventListener('change', () => {
   if (files.length) setUploadStatus(`Ready to upload ${formatFileSummary(files)}`);
 });
 
-categoryForm?.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const categoryName = categoryInput.value.trim();
-  if (!categoryName) {
-    setCategoryStatus('Enter a category name', 'error');
-    return;
-  }
-
-  try {
-    setCategoryStatus('Saving...');
-    const res = await fetch('/api/categories', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: categoryName }),
-    });
-    const createdCategory = await res.json().catch(() => null);
-    if (!res.ok) {
-      const error = createdCategory || {};
-      throw new Error(error.detail || 'Unable to save category');
-    }
-    categoryInput.value = '';
-    setCategoryStatus('Category added', 'success');
-    await fetchCategories({
-      preserveSelection: false,
-      newSelection: createdCategory?.path || createdCategory?.name || categoryName,
-    });
-  } catch (err) {
-    console.error(err);
-    setCategoryStatus(err.message || 'Unable to save category', 'error');
-  }
-});
-
-linkForm?.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const tokenValue = uploadTokenInput.value.trim();
-  const url = linkUrlInput.value.trim();
-  const name = linkNameInput.value.trim();
-  const category = linkCategorySelect.value.trim();
-
-  if (!tokenValue) {
-    setLinkStatus('Upload token is required', 'error');
-    return;
-  }
-
-  if (!url) {
-    setLinkStatus('Enter an https link to save', 'error');
-    return;
-  }
-
-  if (!url.toLowerCase().startsWith('https://')) {
-    setLinkStatus('Only https links are supported', 'error');
-    return;
-  }
-
-  try {
-    setLinkStatus('Saving link...');
-    const res = await fetch('/api/links', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Upload-Token': tokenValue,
-      },
-      body: JSON.stringify({ url, name, category }),
-    });
-
-    const payload = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const detail = payload.detail || payload.message || 'Unable to save link';
-      throw new Error(detail);
+if (categoryForm) {
+  categoryForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const categoryName = categoryInput.value.trim();
+    if (!categoryName) {
+      setCategoryStatus('Enter a category name', 'error');
+      return;
     }
 
-    setLinkStatus('Link saved', 'success');
-    linkForm.reset();
-    linkUrlInput.focus({ preventScroll: true });
-    await fetchMedia();
-  } catch (err) {
-    console.error(err);
-    setLinkStatus(err.message || 'Unable to save link', 'error');
-  }
-});
+    try {
+      setCategoryStatus('Saving...');
+      const res = await httpFetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: categoryName }),
+      });
+      const createdCategory = await res.json().catch(() => null);
+      if (!res.ok) {
+        const error = createdCategory || {};
+        throw new Error(error.detail || 'Unable to save category');
+      }
+      categoryInput.value = '';
+      setCategoryStatus('Category added', 'success');
+      const newSelection =
+        (createdCategory && (createdCategory.path || createdCategory.name)) || categoryName;
+      await fetchCategories({
+        preserveSelection: false,
+        newSelection,
+      });
+    } catch (err) {
+      console.error(err);
+      setCategoryStatus(err.message || 'Unable to save category', 'error');
+    }
+  });
+}
+
+if (linkForm) {
+  linkForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const tokenValue = uploadTokenInput.value.trim();
+    const url = linkUrlInput.value.trim();
+    const name = linkNameInput.value.trim();
+    const category = linkCategorySelect.value.trim();
+
+    if (!tokenValue) {
+      setLinkStatus('Upload token is required', 'error');
+      return;
+    }
+
+    if (!url) {
+      setLinkStatus('Enter an https link to save', 'error');
+      return;
+    }
+
+    if (!url.toLowerCase().startsWith('https://')) {
+      setLinkStatus('Only https links are supported', 'error');
+      return;
+    }
+
+    try {
+      setLinkStatus('Saving link...');
+      const res = await httpFetch('/api/links', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Upload-Token': tokenValue,
+        },
+        body: JSON.stringify({ url, name, category }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = payload.detail || payload.message || 'Unable to save link';
+        throw new Error(detail);
+      }
+
+      setLinkStatus('Link saved', 'success');
+      linkForm.reset();
+      try {
+        linkUrlInput.focus({ preventScroll: true });
+      } catch (focusError) {
+        linkUrlInput.focus();
+      }
+      await fetchMedia();
+    } catch (err) {
+      console.error(err);
+      setLinkStatus(err.message || 'Unable to save link', 'error');
+    }
+  });
+}
 
 function uploadMedia(formData, token, { onProgress } = {}) {
   return new Promise((resolve, reject) => {
@@ -267,8 +319,7 @@ function uploadMedia(formData, token, { onProgress } = {}) {
 async function fetchMedia() {
   try {
     statusEl.textContent = 'Loading media...';
-    const url = new URL('/api/media', window.location.origin);
-    const res = await fetch(url);
+    const res = await httpFetch('/api/media');
     if (!res.ok) throw new Error('Failed to load media');
     cachedItems = await res.json();
     reconcileSelection();
@@ -284,7 +335,7 @@ async function fetchCategories({ preserveSelection = false, newSelection } = {})
   const previousUpload = uploadCategorySelect.value;
 
   try {
-    const res = await fetch('/api/categories');
+    const res = await httpFetch('/api/categories');
     if (!res.ok) throw new Error('Failed to load categories');
 
     const payload = await res.json();
@@ -338,7 +389,7 @@ function setCategories(categories) {
 }
 
 function applyFilters({ shuffle = false } = {}) {
-  const query = searchInput?.value.trim().toLowerCase() || '';
+  const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
   const selectedCategory = filterSelect.value;
   const matchAllCategories = selectedCategory === '__all__';
 
@@ -376,7 +427,7 @@ function applyFilters({ shuffle = false } = {}) {
 }
 
 function sortItems(items) {
-  const selection = sortSelect?.value || 'recent';
+  const selection = sortSelect ? sortSelect.value : 'recent';
   const copy = [...items];
 
   if (selection === 'name') {
@@ -446,7 +497,7 @@ function updateSelectionUI({ preserveStatus = false } = {}) {
   }
 
   const shouldUpdateStatus =
-    !preserveStatus && (!toolbarStatus?.textContent || toolbarStatus?.dataset.state === 'info');
+    !preserveStatus && (!toolbarStatus || !toolbarStatus.textContent || toolbarStatus.dataset.state === 'info');
 
   if (shouldUpdateStatus) {
     setToolbarStatus(
@@ -463,7 +514,11 @@ async function handleDeleteSelected() {
   const token = uploadTokenInput.value.trim();
   if (!token) {
     setToolbarStatus('Upload token is required to delete media', 'error');
-    uploadTokenInput?.focus({ preventScroll: true });
+    try {
+      uploadTokenInput.focus({ preventScroll: true });
+    } catch (error) {
+      uploadTokenInput.focus();
+    }
     return;
   }
 
@@ -476,14 +531,13 @@ async function handleDeleteSelected() {
     let payload = {};
 
     if (paths.length === 1) {
-      const url = new URL('/api/media', window.location.origin);
-      url.searchParams.set('path', paths[0]);
-      res = await fetch(url, {
+      const url = `/api/media?path=${encodeURIComponent(paths[0])}`;
+      res = await httpFetch(url, {
         method: 'DELETE',
         headers: { 'X-Upload-Token': token },
       });
     } else {
-      res = await fetch('/api/media/batch', {
+      res = await httpFetch('/api/media/batch', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -628,7 +682,9 @@ function renderCategoryList(categories) {
 async function removeCategory(category) {
   try {
     setCategoryStatus(`Deleting ${category.name}...`);
-    const res = await fetch(`/api/categories/${encodeURIComponent(category.name)}`, { method: 'DELETE' });
+    const res = await httpFetch(`/api/categories/${encodeURIComponent(category.name)}`, {
+      method: 'DELETE',
+    });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(payload.detail || 'Unable to delete category');
@@ -674,7 +730,7 @@ async function promptRenameCategory(category) {
 
   try {
     setCategoryStatus('Updating category...');
-    const res = await fetch(`/api/categories/${encodeURIComponent(category.name)}`, {
+    const res = await httpFetch(`/api/categories/${encodeURIComponent(category.name)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -696,7 +752,9 @@ async function promptRenameCategory(category) {
 }
 
 function renderGrid(items) {
-  mediaObserver.disconnect();
+  if (mediaObserver && mediaObserver.disconnect) {
+    mediaObserver.disconnect();
+  }
   grid.innerHTML = '';
   for (const item of items) {
     const card = document.createElement('article');
@@ -806,16 +864,24 @@ function handleDragLeave(event) {
 function handleDrop(event) {
   event.preventDefault();
   dropzone.classList.remove('is-dragover');
-  const files = event.dataTransfer?.files;
-  if (!files?.length) return;
+  const files = event.dataTransfer ? event.dataTransfer.files : null;
+  if (!files || !files.length) return;
   assignFiles(files);
 }
 
 function assignFiles(files) {
-  if (!files?.length) return;
-  const dataTransfer = new DataTransfer();
-  Array.from(files).forEach((file) => dataTransfer.items.add(file));
-  uploadFileInput.files = dataTransfer.files;
+  if (!files || !files.length) return;
+  let assignedFiles = files;
+
+  if (typeof DataTransfer !== 'undefined') {
+    const dataTransfer = new DataTransfer();
+    Array.from(files).forEach((file) => dataTransfer.items.add(file));
+    assignedFiles = dataTransfer.files;
+    uploadFileInput.files = assignedFiles;
+  } else {
+    uploadFileInput.files = files;
+  }
+
   const selected = Array.from(uploadFileInput.files || []);
   updateSelectedFiles(selected);
   setUploadStatus(`Ready to upload ${formatFileSummary(selected)}`);
@@ -843,7 +909,7 @@ function triggerCelebrate() {
 }
 
 function smoothScrollToSection(target) {
-  if (!target?.scrollIntoView) return;
+  if (!target || !target.scrollIntoView) return;
   try {
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (error) {
@@ -894,11 +960,19 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') modal.classList.remove('open');
 });
 
-heroUploadButton?.addEventListener('click', (event) => {
-  event.preventDefault();
-  smoothScrollToSection(uploadSection);
-  window.requestAnimationFrame(() => uploadTokenInput?.focus({ preventScroll: true }));
-});
+if (heroUploadButton) {
+  heroUploadButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    smoothScrollToSection(uploadSection);
+    window.requestAnimationFrame(() => {
+      try {
+        uploadTokenInput.focus({ preventScroll: true });
+      } catch (error) {
+        uploadTokenInput.focus();
+      }
+    });
+  });
+}
 
 updateSelectionUI();
 fetchCategories();
@@ -992,7 +1066,9 @@ function registerMediaElement(mediaEl, isVideo) {
     return;
   }
 
-  mediaObserver.observe(mediaEl);
+  if (mediaObserver && mediaObserver.observe) {
+    mediaObserver.observe(mediaEl);
+  }
   attachVideoPlaybackHandlers(mediaEl, isVideo);
 }
 
