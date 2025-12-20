@@ -73,6 +73,7 @@ const linkStatus = document.querySelector('.link-status');
 const selectAllButton = document.querySelector('#selectAllButton');
 const clearSelectionButton = document.querySelector('#clearSelectionButton');
 const deleteSelectedButton = document.querySelector('#deleteSelectedButton');
+const slideshowButton = document.querySelector('#slideshowButton');
 const toolbarStatus = document.querySelector('.toolbar-status');
 
 const supportsIntersectionObserver = typeof IntersectionObserver !== 'undefined';
@@ -89,6 +90,9 @@ let cachedItems = [];
 let visibleItems = [];
 let selectedPaths = new Set();
 let isDeleting = false;
+let slideshowTimer = null;
+let slideshowItems = [];
+let slideshowIndex = 0;
 
 filterSelect.addEventListener('change', () => applyFilters());
 
@@ -101,6 +105,7 @@ if (shuffleButton) shuffleButton.addEventListener('click', () => applyFilters({ 
 if (selectAllButton) selectAllButton.addEventListener('click', selectVisibleItems);
 if (clearSelectionButton) clearSelectionButton.addEventListener('click', clearSelection);
 if (deleteSelectedButton) deleteSelectedButton.addEventListener('click', handleDeleteSelected);
+if (slideshowButton) slideshowButton.addEventListener('click', toggleSlideshow);
 
 uploadForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -423,6 +428,7 @@ function applyFilters({ shuffle = false } = {}) {
   visibleItems = items;
   renderGrid(items);
   updateSelectionUI();
+  syncSlideshowWithVisibleItems();
   statusEl.textContent = items.length ? '' : 'No items match your filters yet';
 }
 
@@ -505,6 +511,83 @@ function updateSelectionUI({ preserveStatus = false } = {}) {
       'info'
     );
   }
+}
+
+function syncSlideshowWithVisibleItems() {
+  if (!slideshowButton) return;
+  const pictureItems = getPictureItems(visibleItems);
+  slideshowButton.disabled = !pictureItems.length;
+
+  if (slideshowTimer) {
+    if (!pictureItems.length) {
+      stopSlideshow({ silent: true });
+      setToolbarStatus('Auto display stopped — nothing to show', 'info');
+      return;
+    }
+    slideshowItems = pictureItems;
+    slideshowIndex = slideshowIndex % slideshowItems.length;
+    setSlideshowButtonState(true, slideshowItems.length);
+  }
+}
+
+function toggleSlideshow() {
+  if (slideshowTimer) {
+    stopSlideshow();
+  } else {
+    startSlideshow();
+  }
+}
+
+function startSlideshow() {
+  const pictureItems = getPictureItems(visibleItems);
+  if (!pictureItems.length) {
+    setToolbarStatus('No pictures to auto display yet', 'error');
+    return;
+  }
+
+  slideshowItems = pictureItems;
+  slideshowIndex = 0;
+  setSlideshowButtonState(true, slideshowItems.length);
+  setToolbarStatus(
+    `Auto display cycling through ${slideshowItems.length} item${slideshowItems.length === 1 ? '' : 's'}`,
+    'info'
+  );
+
+  openModal(slideshowItems[slideshowIndex], { fromSlideshow: true });
+  slideshowTimer = window.setInterval(() => {
+    if (!slideshowItems.length) {
+      stopSlideshow({ silent: true });
+      return;
+    }
+    slideshowIndex = (slideshowIndex + 1) % slideshowItems.length;
+    openModal(slideshowItems[slideshowIndex], { fromSlideshow: true });
+  }, 4500);
+}
+
+function stopSlideshow({ silent = false } = {}) {
+  if (slideshowTimer) {
+    window.clearInterval(slideshowTimer);
+    slideshowTimer = null;
+  }
+  slideshowItems = [];
+  setSlideshowButtonState(false);
+  if (!silent) {
+    setToolbarStatus('Auto display stopped', 'info');
+  }
+}
+
+function setSlideshowButtonState(isActive, total = slideshowItems.length || 0) {
+  if (!slideshowButton) return;
+  slideshowButton.dataset.active = isActive ? 'true' : 'false';
+  slideshowButton.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  slideshowButton.textContent = isActive ? 'Stop auto display' : 'Auto display';
+  slideshowButton.title = isActive
+    ? `Cycling through ${total} picture${total === 1 ? '' : 's'}`
+    : 'Automatically open each picture in view';
+}
+
+function getPictureItems(items) {
+  return (items || []).filter((item) => item && item.source !== 'link');
 }
 
 async function handleDeleteSelected() {
@@ -922,7 +1005,7 @@ function getCategoryLabel(categoryPath, fallbackName) {
   return categoryLookup.get(normalizedPath) || fallbackName || 'Uncategorized';
 }
 
-function openModal(item) {
+function openModal(item, { fromSlideshow = false } = {}) {
   if (item.source === 'link') {
     const targetUrl = getResolvedMediaUrl(item.url);
     window.open(targetUrl, '_blank', 'noopener');
@@ -931,6 +1014,7 @@ function openModal(item) {
   }
   modal.classList.add('open');
   modalContent.innerHTML = '';
+  modal.dataset.slideshow = fromSlideshow ? 'true' : 'false';
   const isVideo = item.mime_type.startsWith('video');
   const mediaEl = document.createElement(isVideo ? 'video' : 'img');
   const previewUrl = getPreviewUrl(item);
@@ -951,13 +1035,20 @@ function openModal(item) {
   modalContent.append(mediaEl, closeBtn);
 }
 
-closeBtn.addEventListener('click', () => modal.classList.remove('open'));
+function closeModal({ stopAutoDisplay = true } = {}) {
+  modal.classList.remove('open');
+  if (stopAutoDisplay && slideshowTimer) {
+    stopSlideshow({ silent: true });
+  }
+}
+
+closeBtn.addEventListener('click', () => closeModal());
 modal.addEventListener('click', (e) => {
-  if (e.target === modal) modal.classList.remove('open');
+  if (e.target === modal) closeModal();
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') modal.classList.remove('open');
+  if (e.key === 'Escape') closeModal();
 });
 
 if (heroUploadButton) {
