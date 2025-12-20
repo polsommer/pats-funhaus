@@ -33,17 +33,20 @@ const clearSelectionButton = document.querySelector('#clearSelectionButton');
 const deleteSelectedButton = document.querySelector('#deleteSelectedButton');
 const toolbarStatus = document.querySelector('.toolbar-status');
 
+const supportsIntersectionObserver = typeof IntersectionObserver !== 'undefined';
+const mediaObserver = supportsIntersectionObserver
+  ? new IntersectionObserver(handleMediaVisibility, {
+      rootMargin: '200px 0px',
+      threshold: 0.25,
+    })
+  : null;
+
 let allCategories = [];
 let categoryLookup = new Map();
 let cachedItems = [];
 let visibleItems = [];
 let selectedPaths = new Set();
 let isDeleting = false;
-
-const mediaObserver = new IntersectionObserver(handleMediaVisibility, {
-  rootMargin: '200px 0px',
-  threshold: 0.25,
-});
 
 filterSelect.addEventListener('change', () => applyFilters());
 
@@ -839,6 +842,15 @@ function triggerCelebrate() {
   setTimeout(() => dropzone.classList.remove('celebrate'), 1200);
 }
 
+function smoothScrollToSection(target) {
+  if (!target?.scrollIntoView) return;
+  try {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (error) {
+    target.scrollIntoView();
+  }
+}
+
 function getCategoryLabel(categoryPath, fallbackName) {
   const normalizedPath = categoryPath || '';
   return categoryLookup.get(normalizedPath) || fallbackName || 'Uncategorized';
@@ -884,7 +896,7 @@ document.addEventListener('keydown', (e) => {
 
 heroUploadButton?.addEventListener('click', (event) => {
   event.preventDefault();
-  uploadSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  smoothScrollToSection(uploadSection);
   window.requestAnimationFrame(() => uploadTokenInput?.focus({ preventScroll: true }));
 });
 
@@ -969,24 +981,45 @@ function handleMediaVisibility(entries) {
 }
 
 function registerMediaElement(mediaEl, isVideo) {
-  mediaEl.dataset.intersecting = 'false';
+  mediaEl.dataset.intersecting = mediaObserver ? 'false' : 'true';
   if (isVideo) {
     mediaEl.dataset.shouldPlay = 'false';
   }
-  mediaObserver.observe(mediaEl);
 
-  if (isVideo && !mediaEl.dataset.playHandlerAttached) {
-    mediaEl.addEventListener('loadeddata', () => {
-      if (mediaEl.dataset.intersecting === 'true' && mediaEl.dataset.shouldPlay === 'true') {
-        mediaEl.play().catch(() => {});
-      }
-    });
-    mediaEl.addEventListener('pointerenter', () => requestVideoPlayback(mediaEl));
-    mediaEl.addEventListener('pointerleave', () => stopVideoPlayback(mediaEl));
-    mediaEl.addEventListener('focus', () => requestVideoPlayback(mediaEl));
-    mediaEl.addEventListener('blur', () => stopVideoPlayback(mediaEl));
-    mediaEl.dataset.playHandlerAttached = 'true';
+  if (!mediaObserver) {
+    eagerLoadMedia(mediaEl, isVideo);
+    attachVideoPlaybackHandlers(mediaEl, isVideo);
+    return;
   }
+
+  mediaObserver.observe(mediaEl);
+  attachVideoPlaybackHandlers(mediaEl, isVideo);
+}
+
+function eagerLoadMedia(mediaEl, isVideo) {
+  const source = mediaEl.dataset.src || mediaEl.dataset.fullSrc;
+  if (source && !mediaEl.dataset.loaded) {
+    mediaEl.src = source;
+    mediaEl.dataset.loaded = 'true';
+  }
+  if (isVideo) {
+    mediaEl.preload = 'metadata';
+  }
+}
+
+function attachVideoPlaybackHandlers(mediaEl, isVideo) {
+  if (!isVideo || mediaEl.dataset.playHandlerAttached) return;
+
+  mediaEl.addEventListener('loadeddata', () => {
+    if (mediaEl.dataset.intersecting === 'true' && mediaEl.dataset.shouldPlay === 'true') {
+      mediaEl.play().catch(() => {});
+    }
+  });
+  mediaEl.addEventListener('pointerenter', () => requestVideoPlayback(mediaEl));
+  mediaEl.addEventListener('pointerleave', () => stopVideoPlayback(mediaEl));
+  mediaEl.addEventListener('focus', () => requestVideoPlayback(mediaEl));
+  mediaEl.addEventListener('blur', () => stopVideoPlayback(mediaEl));
+  mediaEl.dataset.playHandlerAttached = 'true';
 }
 
 function requestVideoPlayback(videoEl) {
