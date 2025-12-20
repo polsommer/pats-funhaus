@@ -25,6 +25,13 @@ body {
   flex-direction: column;
 }
 
+@media (hover: none), (max-width: 1100px) {
+  body {
+    background-attachment: scroll;
+    background-size: cover;
+  }
+}
+
 .top-nav {
   padding: 1rem 1.5rem;
   display: flex;
@@ -36,6 +43,12 @@ body {
   backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
   z-index: 15;
+}
+
+@supports not ((-webkit-backdrop-filter: blur(12px)) or (backdrop-filter: blur(12px))) {
+  .top-nav {
+    background: rgba(11, 17, 32, 0.95);
+  }
 }
 
 .logo {
@@ -928,5 +941,32 @@ main {
 
   .field-row {
     flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  body {
+    scroll-behavior: auto;
+    background-attachment: scroll;
+  }
+
+  .hero::after,
+  .pill-button,
+  .cta,
+  .ghost,
+  .card,
+  .dropzone,
+  .upload-panel,
+  .modal {
+    filter: none;
+    box-shadow: none;
   }
 }
