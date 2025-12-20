@@ -3,37 +3,57 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pi Media Gallery</title>
+    <title>Family Media House</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <header class="top-nav">
-      <div class="logo"><span>Pi</span>Media Gallery</div>
-      <nav class="nav-links" aria-label="Primary">
-        <a href="#gallery">Gallery</a>
-        <a href="#upload">Upload</a>
-        <a href="#about">About</a>
-      </nav>
-      <a class="pill-button" href="#upload">Start</a>
-    </header>
+      <header class="top-nav">
+        <div class="logo"><span>Pi</span>Family House</div>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="#gallery">Gallery</a>
+          <a href="#upload">Upload</a>
+          <a href="#family">Family vibe</a>
+          <a href="#about">About</a>
+        </nav>
+        <a class="pill-button" href="#upload">Start</a>
+      </header>
 
-    <section class="hero" id="hero">
-      <div class="hero__content">
-        <p class="eyebrow">Pi-powered sharing</p>
-        <h1>Showcase your favorite clips and snaps in vivid color.</h1>
-        <p class="lede">Upload directly from your Pi and explore everything you've captured in one vibrant, responsive gallery.</p>
-        <div class="hero__actions">
-          <button class="cta" id="startUpload">Upload media</button>
-          <a class="ghost" href="#gallery">Browse gallery</a>
+      <section class="hero" id="hero">
+        <div class="hero__content">
+          <p class="eyebrow">Pi-powered family sharing</p>
+          <h1>Gather every memory in one cozy spot.</h1>
+          <p class="lede">
+            Upload from the living room TV, scroll from your phone, and keep the whole family smiling with a colorful,
+            easy-to-use gallery.
+          </p>
+          <div class="hero__actions">
+            <button class="cta" id="startUpload">Upload media</button>
+            <a class="ghost" href="#gallery">Browse gallery</a>
+          </div>
         </div>
-      </div>
-    </section>
+        <div class="hero-card-stack" aria-hidden="true">
+          <div class="hero-card">
+            <p class="card-title">Weekend Picnic</p>
+            <p class="card-body">Sunny skies, sticky fingers, and homemade lemonade.</p>
+          </div>
+          <div class="hero-card">
+            <p class="card-title">Birthday Bash</p>
+            <p class="card-body">Grandma's stories, cousins laughing, candles glowing.</p>
+          </div>
+          <div class="hero-card">
+            <p class="card-title">Movie Night</p>
+            <p class="card-body">Projector on, blankets out, popcorn everywhere.</p>
+          </div>
+        </div>
+      </section>
 
     <section id="upload" class="upload-section">
       <div class="section-header">
         <p class="eyebrow">Upload</p>
         <h2>Share something new</h2>
-        <p class="upload-subtext">Filter by category, then drop in a photo or video to add to the gallery.</p>
+        <p class="upload-subtext">
+          Label moments by family member, season, or vacation, then drop in photos or videos to keep everything together.
+        </p>
       </div>
       <div class="actions">
         <div class="filter-controls">
@@ -188,8 +208,8 @@
     <main id="gallery">
       <div class="section-header">
         <p class="eyebrow">Gallery</p>
-        <h2>Your media hub</h2>
-        <p class="upload-subtext">Every clip and snapshot stays organized with simple category filters.</p>
+        <h2>Your shared memory book</h2>
+        <p class="upload-subtext">Simple filters keep every clip and snapshot organized by the people and traditions you love most.</p>
       </div>
       <div class="gallery-toolbar" aria-label="Gallery selection tools">
         <div class="selection-controls">
@@ -210,8 +230,38 @@
     <section id="about" class="about">
       <div class="about-card">
         <p class="eyebrow">About</p>
-        <h2>Built for the Pi.</h2>
-        <p>Pi Media Gallery turns your Pi into a simple media hub. Upload securely with tokens, browse instantly with smooth previews, and enjoy a colorful experience across devices.</p>
+        <h2>Built for family time.</h2>
+        <p>
+          Pi Media Gallery turns your Pi into a cozy media hub. Upload securely with tokens, browse instantly with smooth previews,
+          and enjoy a colorful experience that looks beautiful on the TV in the living room or a phone on the go.
+        </p>
+      </div>
+    </section>
+
+    <section class="family" id="family">
+      <div class="family-card">
+        <div>
+          <p class="eyebrow">Family vibe</p>
+          <h2>Designed to feel like home.</h2>
+          <p>
+            Keep everyone in the loop with a gallery that feels warm and welcoming. Add categories like
+            <strong>Dad's camera</strong>, <strong>Road trips</strong>, or <strong>First day of school</strong> to make every moment easy to find.
+          </p>
+        </div>
+        <ul class="family-list">
+          <li>
+            <span class="dot" aria-hidden="true"></span>
+            Kid-friendly layout with big buttons and clear labels.
+          </li>
+          <li>
+            <span class="dot" aria-hidden="true"></span>
+            Cozy gradients inspired by sunset skies.
+          </li>
+          <li>
+            <span class="dot" aria-hidden="true"></span>
+            Works great on tablets for couch-side browsing.
+          </li>
+        </ul>
       </div>
     </section>
 
