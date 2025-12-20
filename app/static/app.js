@@ -74,6 +74,8 @@ const selectAllButton = document.querySelector('#selectAllButton');
 const clearSelectionButton = document.querySelector('#clearSelectionButton');
 const deleteSelectedButton = document.querySelector('#deleteSelectedButton');
 const slideshowButton = document.querySelector('#slideshowButton');
+const slideshowDelaySlider = document.querySelector('#slideshowDelay');
+const slideshowDelayValue = document.querySelector('#slideshowDelayValue');
 const toolbarStatus = document.querySelector('.toolbar-status');
 
 const supportsIntersectionObserver = typeof IntersectionObserver !== 'undefined';
@@ -93,6 +95,7 @@ let isDeleting = false;
 let slideshowTimer = null;
 let slideshowItems = [];
 let slideshowIndex = 0;
+let slideshowDelayMs = 4500;
 
 filterSelect.addEventListener('change', () => applyFilters());
 
@@ -106,6 +109,7 @@ if (selectAllButton) selectAllButton.addEventListener('click', selectVisibleItem
 if (clearSelectionButton) clearSelectionButton.addEventListener('click', clearSelection);
 if (deleteSelectedButton) deleteSelectedButton.addEventListener('click', handleDeleteSelected);
 if (slideshowButton) slideshowButton.addEventListener('click', toggleSlideshow);
+initializeSlideshowDelay();
 
 uploadForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -530,6 +534,27 @@ function syncSlideshowWithVisibleItems() {
   }
 }
 
+function initializeSlideshowDelay() {
+  if (!slideshowDelaySlider) return;
+  const storedSeconds = Number(localStorage.getItem('slideshowDelaySeconds'));
+  const sliderSeconds = Number(slideshowDelaySlider.value) || 4.5;
+  const seconds = Number.isFinite(storedSeconds) && storedSeconds > 0 ? storedSeconds : sliderSeconds;
+  slideshowDelayMs = seconds * 1000;
+  slideshowDelaySlider.value = seconds.toString();
+  updateSlideshowDelayLabel(seconds);
+
+  slideshowDelaySlider.addEventListener('input', () => {
+    const secondsValue = Number(slideshowDelaySlider.value) || 4.5;
+    slideshowDelayMs = secondsValue * 1000;
+    localStorage.setItem('slideshowDelaySeconds', secondsValue.toString());
+    updateSlideshowDelayLabel(secondsValue);
+    if (slideshowTimer) {
+      restartSlideshowTimer();
+      setToolbarStatus(`Auto display pacing set to ${formatSeconds(secondsValue)} per slide`, 'info');
+    }
+  });
+}
+
 function toggleSlideshow() {
   if (slideshowTimer) {
     stopSlideshow();
@@ -554,14 +579,7 @@ function startSlideshow() {
   );
 
   openModal(slideshowItems[slideshowIndex], { fromSlideshow: true });
-  slideshowTimer = window.setInterval(() => {
-    if (!slideshowItems.length) {
-      stopSlideshow({ silent: true });
-      return;
-    }
-    slideshowIndex = (slideshowIndex + 1) % slideshowItems.length;
-    openModal(slideshowItems[slideshowIndex], { fromSlideshow: true });
-  }, 4500);
+  restartSlideshowTimer();
 }
 
 function stopSlideshow({ silent = false } = {}) {
@@ -588,6 +606,31 @@ function setSlideshowButtonState(isActive, total = slideshowItems.length || 0) {
 
 function getPictureItems(items) {
   return (items || []).filter((item) => item && item.source !== 'link');
+}
+
+function restartSlideshowTimer() {
+  if (slideshowTimer) {
+    window.clearInterval(slideshowTimer);
+  }
+  slideshowTimer = window.setInterval(nextSlide, slideshowDelayMs);
+}
+
+function nextSlide() {
+  if (!slideshowItems.length) {
+    stopSlideshow({ silent: true });
+    return;
+  }
+  slideshowIndex = (slideshowIndex + 1) % slideshowItems.length;
+  openModal(slideshowItems[slideshowIndex], { fromSlideshow: true });
+}
+
+function updateSlideshowDelayLabel(seconds) {
+  if (!slideshowDelayValue) return;
+  slideshowDelayValue.textContent = formatSeconds(seconds);
+}
+
+function formatSeconds(seconds) {
+  return seconds % 1 === 0 ? `${seconds.toFixed(0)}s` : `${seconds.toFixed(1)}s`;
 }
 
 async function handleDeleteSelected() {
