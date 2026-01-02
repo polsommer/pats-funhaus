@@ -42,15 +42,109 @@ app.add_middleware(
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-AUTH_SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(255) NOT NULL UNIQUE,
-    password_hash VARCHAR(128) NOT NULL,
-    salt VARCHAR(64) NOT NULL,
-    created_at DATETIME NOT NULL
-) ENGINE=InnoDB;
-"""
+AUTH_DB_SCHEMA = [
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        first_name VARCHAR(50) NOT NULL,
+        last_name VARCHAR(50),
+        email VARCHAR(100) UNIQUE,
+        password_hash VARCHAR(255),
+        role ENUM('admin','member','guest') DEFAULT 'member',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS albums (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        parent_id INT NULL,
+        title VARCHAR(150) NOT NULL,
+        description TEXT,
+        created_by INT,
+        visibility ENUM('private','family','public') DEFAULT 'family',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (parent_id) REFERENCES albums(id) ON DELETE CASCADE,
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS media (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        album_id INT NOT NULL,
+        uploaded_by INT,
+        media_type ENUM('photo','video') NOT NULL,
+        mime_type VARCHAR(50),
+        title VARCHAR(150),
+        description TEXT,
+        file_path VARCHAR(255) NOT NULL,
+        thumbnail_path VARCHAR(255),
+        file_size BIGINT,
+        duration_seconds INT,
+        taken_at DATETIME,
+        visibility ENUM('private','family','public') DEFAULT 'family',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE,
+        FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL,
+        INDEX idx_album (album_id),
+        INDEX idx_media_type (media_type),
+        INDEX idx_visibility (visibility)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS tags (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(50) UNIQUE NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS media_tags (
+        media_id INT,
+        tag_id INT,
+        PRIMARY KEY (media_id, tag_id),
+        FOREIGN KEY (media_id) REFERENCES media(id) ON DELETE CASCADE,
+        FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS media_people (
+        media_id INT,
+        user_id INT,
+        PRIMARY KEY (media_id, user_id),
+        FOREIGN KEY (media_id) REFERENCES media(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS comments (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        media_id INT NOT NULL,
+        user_id INT,
+        comment TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (media_id) REFERENCES media(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS likes (
+        media_id INT,
+        user_id INT,
+        PRIMARY KEY (media_id, user_id),
+        FOREIGN KEY (media_id) REFERENCES media(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS album_permissions (
+        album_id INT,
+        user_id INT,
+        permission ENUM('view','upload','admin') DEFAULT 'view',
+        PRIMARY KEY (album_id, user_id),
+        FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+    """,
+]
 
 
 def verify_token(x_upload_token: Annotated[str | None, Header()] = None) -> None:
@@ -67,13 +161,15 @@ def is_allowed_file(filename: str) -> bool:
 def normalize_category(category: str | None) -> str | None:
     return settings.normalize_category(category)
 
-def _get_auth_connection() -> mysql.connector.connection.MySQLConnection:
+def _get_auth_connection(
+    database: str | None = None,
+) -> mysql.connector.connection.MySQLConnection:
     return mysql.connector.connect(
         host=settings.auth_db_host,
         port=settings.auth_db_port,
         user=settings.auth_db_user,
         password=settings.auth_db_password,
-        database=settings.auth_db_name,
+        database=database,
     )
 
 
@@ -81,24 +177,67 @@ def _hash_password(password: str, salt: bytes) -> str:
     return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000).hex()
 
 
+def _build_password_hash(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    password_hash = _hash_password(password, salt)
+    return f"{salt.hex()}${password_hash}"
+
+
+def _verify_password(password: str, stored_hash: str) -> bool:
+    if "$" not in stored_hash:
+        return secrets.compare_digest(password, stored_hash)
+    salt_hex, password_hash = stored_hash.split("$", 1)
+    try:
+        salt = bytes.fromhex(salt_hex)
+    except ValueError:
+        return False
+    candidate_hash = _hash_password(password, salt)
+    return secrets.compare_digest(candidate_hash, password_hash)
+
+
 def _ensure_auth_user() -> None:
-    connection = _get_auth_connection()
+    server_connection = _get_auth_connection()
+    server_cursor = server_connection.cursor(dictionary=True)
+    try:
+        server_cursor.execute(
+            f"""
+            CREATE DATABASE IF NOT EXISTS `{settings.auth_db_name}`
+            CHARACTER SET utf8mb4
+            COLLATE utf8mb4_unicode_ci
+            """
+        )
+        server_connection.commit()
+    finally:
+        server_cursor.close()
+        server_connection.close()
+
+    connection = _get_auth_connection(settings.auth_db_name)
     cursor = connection.cursor(dictionary=True)
     try:
-        cursor.execute(AUTH_SCHEMA)
+        for statement in AUTH_DB_SCHEMA:
+            cursor.execute(statement)
+
         cursor.execute(
-            "SELECT id FROM users WHERE username = %s",
-            (settings.login_username,),
+            "SELECT id FROM users WHERE email = %s OR first_name = %s",
+            (settings.login_username, settings.login_username),
         )
         existing = cursor.fetchone()
         if existing:
             return
 
-        salt = secrets.token_bytes(16)
-        password_hash = _hash_password(settings.login_password, salt)
+        password_hash = _build_password_hash(settings.login_password)
         cursor.execute(
-            "INSERT INTO users (username, password_hash, salt, created_at) VALUES (%s, %s, %s, %s)",
-            (settings.login_username, password_hash, salt.hex(), datetime.utcnow()),
+            """
+            INSERT INTO users (first_name, last_name, email, password_hash, role)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (
+                settings.login_username,
+                None,
+                settings.login_username,
+                password_hash,
+                "admin",
+            ),
         )
         connection.commit()
     finally:
@@ -337,12 +476,12 @@ def login(payload: LoginRequest) -> LoginResponse:
     if not username or not payload.password:
         raise HTTPException(status_code=400, detail="Username and password are required")
 
-    connection = _get_auth_connection()
+    connection = _get_auth_connection(settings.auth_db_name)
     cursor = connection.cursor(dictionary=True)
     try:
         cursor.execute(
-            "SELECT password_hash, salt FROM users WHERE username = %s",
-            (username,),
+            "SELECT password_hash FROM users WHERE email = %s OR first_name = %s",
+            (username, username),
         )
         record = cursor.fetchone()
     finally:
@@ -352,9 +491,7 @@ def login(payload: LoginRequest) -> LoginResponse:
     if not record:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    salt = bytes.fromhex(record["salt"])
-    candidate_hash = _hash_password(payload.password, salt)
-    if not secrets.compare_digest(candidate_hash, record["password_hash"]):
+    if not _verify_password(payload.password, record["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     return LoginResponse(message="Login successful", username=username)
