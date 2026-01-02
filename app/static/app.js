@@ -46,6 +46,10 @@ const modal = document.querySelector('.modal');
 const modalContent = document.querySelector('.modal-content');
 const closeBtn = document.querySelector('.close');
 const filterSelect = document.querySelector('#categoryFilter');
+const loginForm = document.querySelector('#loginForm');
+const loginUsernameInput = document.querySelector('#loginUsername');
+const loginPasswordInput = document.querySelector('#loginPassword');
+const loginStatus = document.querySelector('.login-status');
 const uploadForm = document.querySelector('#uploadForm');
 const uploadTokenInput = document.querySelector('#uploadToken');
 const uploadFileInput = document.querySelector('#uploadFile');
@@ -138,6 +142,38 @@ if (clearSelectionButton) clearSelectionButton.addEventListener('click', clearSe
 if (deleteSelectedButton) deleteSelectedButton.addEventListener('click', handleDeleteSelected);
 if (slideshowButton) slideshowButton.addEventListener('click', toggleSlideshow);
 initializeSlideshowDelay();
+
+if (loginForm) {
+  loginForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const username = loginUsernameInput.value.trim();
+    const password = loginPasswordInput.value;
+
+    if (!username || !password) {
+      setLoginStatus('Username and password are required', 'error');
+      return;
+    }
+
+    try {
+      setLoginStatus('Signing in...');
+      const res = await httpFetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload.detail || 'Unable to sign in');
+      }
+
+      setLoginStatus(`Welcome back, ${payload.username || username}!`, 'success');
+      loginPasswordInput.value = '';
+    } catch (err) {
+      console.error(err);
+      setLoginStatus(err.message || 'Unable to sign in', 'error');
+    }
+  });
+}
 
 uploadForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -1000,6 +1036,15 @@ function setLinkStatus(message, state = 'info') {
   linkStatus.classList.remove('pop');
   void linkStatus.offsetWidth;
   linkStatus.classList.add('pop');
+}
+
+function setLoginStatus(message, state = 'info') {
+  if (!loginStatus) return;
+  loginStatus.textContent = message;
+  loginStatus.dataset.state = state;
+  loginStatus.classList.remove('pop');
+  void loginStatus.offsetWidth;
+  loginStatus.classList.add('pop');
 }
 
 function setCategoryStatus(message, state = 'info') {

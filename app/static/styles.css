@@ -117,6 +117,7 @@ body {
 }
 
 .hero,
+.login-section,
 .upload-section,
 main,
 .about,
@@ -380,6 +381,42 @@ main,
   box-shadow: var(--shadow);
 }
 
+.login-section {
+  display: grid;
+  gap: 1.2rem;
+}
+
+.login-panel {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 159, 127, 0.4);
+  border-radius: 16px;
+  padding: 1rem 1.1rem;
+  box-shadow: var(--shadow);
+  max-width: 680px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.login-form button {
+  padding: 0.65rem 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(99, 102, 241, 0.55);
+  background: var(--accent);
+  color: #0b1220;
+  font-weight: 800;
+  box-shadow: 0 10px 30px rgba(99, 102, 241, 0.28);
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.login-form button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 32px rgba(34, 211, 238, 0.25);
+}
+
 .category-list {
   list-style: none;
   padding: 0;
@@ -619,7 +656,8 @@ main,
 }
 
 .upload-status,
-.link-status {
+.link-status,
+.login-status {
   margin: 0;
   font-size: 0.95rem;
   color: var(--muted);
@@ -632,16 +670,19 @@ main,
 }
 
 .upload-status[data-state='error'],
-.link-status[data-state='error'] {
+.link-status[data-state='error'],
+.login-status[data-state='error'] {
   color: #f87171;
 }
 
 .upload-status[data-state='success'],
-.link-status[data-state='success'] {
+.link-status[data-state='success'],
+.login-status[data-state='success'] {
   color: #4ade80;
 }
 
-.upload-status.pop {
+.upload-status.pop,
+.login-status.pop {
   animation: statusPop 220ms ease;
 }
 
