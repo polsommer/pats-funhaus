@@ -4,10 +4,11 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP_DIR="$PROJECT_ROOT/app"
 VENV_DIR="$APP_DIR/.venv"
-DEFAULT_UPLOAD_TOKEN="changeme"
 DEFAULT_MEDIA_DIR="$APP_DIR/media"
 DEFAULT_HOST="192.168.88.15"
 DEFAULT_PORT="8000"
+DEFAULT_LOGIN_USERNAME="family"
+DEFAULT_LOGIN_PASSWORD="welcome-home"
 
 log() {
   printf "\033[1;32m[pi-media]\033[0m %s\n" "$1"
@@ -34,8 +35,9 @@ main() {
   require_cmd python3
   require_cmd pip
 
-  local upload_token media_dir host port
-  upload_token=$(prompt "Upload token" "$DEFAULT_UPLOAD_TOKEN")
+  local login_username login_password media_dir host port
+  login_username=$(prompt "Login username" "$DEFAULT_LOGIN_USERNAME")
+  login_password=$(prompt "Login password" "$DEFAULT_LOGIN_PASSWORD")
   media_dir=$(prompt "Media directory" "$DEFAULT_MEDIA_DIR")
   host=$(prompt "Host" "$DEFAULT_HOST")
   port=$(prompt "Port" "$DEFAULT_PORT")
@@ -67,14 +69,16 @@ ERR
   log "Ensuring media directory exists at $media_dir"
   mkdir -p "$media_dir"
 
-  export UPLOAD_TOKEN="$upload_token"
   export MEDIA_DIR="$media_dir"
+  export LOGIN_USERNAME="$login_username"
+  export LOGIN_PASSWORD="$login_password"
 
   export PYTHONPATH="$PROJECT_ROOT:${PYTHONPATH:-}"
 
   log "Ready to launch"
-  echo "Env: UPLOAD_TOKEN=$UPLOAD_TOKEN"
   echo "Env: MEDIA_DIR=$MEDIA_DIR"
+  echo "Env: LOGIN_USERNAME=$LOGIN_USERNAME"
+  echo "Env: LOGIN_PASSWORD=$LOGIN_PASSWORD"
   echo "Env: PYTHONPATH=$PYTHONPATH"
   echo "Command: python -m uvicorn app.main:app --host $host --port $port"
 
@@ -89,7 +93,7 @@ ERR
 
   log "To start later, run:"
   echo "cd $APP_DIR && source $VENV_DIR/bin/activate"
-  echo "UPLOAD_TOKEN=$UPLOAD_TOKEN MEDIA_DIR=$MEDIA_DIR python -m uvicorn app.main:app --host $host --port $port"
+  echo "LOGIN_USERNAME=$LOGIN_USERNAME LOGIN_PASSWORD=$LOGIN_PASSWORD MEDIA_DIR=$MEDIA_DIR python -m uvicorn app.main:app --host $host --port $port"
 }
 
 main "$@"

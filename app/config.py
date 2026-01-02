@@ -15,9 +15,6 @@ class Settings:
         ).expanduser().resolve()
         self.media_dir.mkdir(parents=True, exist_ok=True)
 
-        # Token is required for uploads; set via env or .env file
-        self.upload_token: str | None = os.getenv("UPLOAD_TOKEN")
-
         # Limit accepted file extensions for the gallery
         default_exts = "jpg,jpeg,png,gif,webp,mp4,mov,mkv,avi"
         self.allowed_extensions = {

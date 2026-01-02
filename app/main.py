@@ -15,7 +15,6 @@ from fastapi import (
     FastAPI,
     File,
     Form,
-    Header,
     HTTPException,
     UploadFile,
     Query,
@@ -24,6 +23,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import mysql.connector
 from pydantic import BaseModel
 
@@ -146,12 +146,41 @@ AUTH_DB_SCHEMA = [
     """,
 ]
 
+security = HTTPBasic()
 
-def verify_token(x_upload_token: Annotated[str | None, Header()] = None) -> None:
-    if settings.upload_token is None:
-        raise HTTPException(status_code=400, detail="UPLOAD_TOKEN not configured on server")
-    if not secrets.compare_digest(x_upload_token or "", settings.upload_token):
-        raise HTTPException(status_code=401, detail="Invalid upload token")
+def require_login(
+    credentials: Annotated[HTTPBasicCredentials, Depends(security)],
+) -> dict[str, str | int]:
+    username = credentials.username.strip()
+    password = credentials.password
+
+    if not username or not password:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+    connection = _get_auth_connection(settings.auth_db_name)
+    cursor = connection.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id, password_hash, email, first_name FROM users WHERE email = %s OR first_name = %s",
+            (username, username),
+        )
+        record = cursor.fetchone()
+    finally:
+        cursor.close()
+        connection.close()
+
+    if not record or not _verify_password(password, record["password_hash"]):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+    return record
 
 
 def is_allowed_file(filename: str) -> bool:
@@ -628,7 +657,7 @@ def upload_media(
     response: Response,
     files: Annotated[list[UploadFile], File(...)],
     category: Annotated[str | None, Form()] = None,
-    _: None = Depends(verify_token),
+    _: dict[str, str | int] = Depends(require_login),
 ) -> dict[str, str | dict[str, str] | list[dict[str, str | None]] | None]:
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
@@ -782,7 +811,7 @@ def _delete_link_by_path(link_path: str) -> dict[str, str]:
 @app.delete("/api/media")
 def delete_media(
     path: Annotated[str, Query(alias="path")],
-    _: None = Depends(verify_token),
+    _: dict[str, str | int] = Depends(require_login),
 ) -> dict[str, str]:
     if _is_link_path(path):
         return _delete_link_by_path(path)
@@ -800,7 +829,7 @@ def delete_media(
 def delete_media_batch(
     payload: Annotated[list[str], Body(..., embed=False)],
     response: Response,
-    _: None = Depends(verify_token),
+    _: dict[str, str | int] = Depends(require_login),
 ) -> dict[str, list[dict[str, str | int]]]:
     if not isinstance(payload, list) or not payload:
         raise HTTPException(status_code=400, detail="Provide at least one path to delete")
@@ -933,7 +962,7 @@ def list_links() -> list[Link]:
 
 
 @app.post("/api/links", status_code=201)
-def create_link(payload: CreateLinkRequest, _: None = Depends(verify_token)) -> Link:
+def create_link(payload: CreateLinkRequest, _: dict[str, str | int] = Depends(require_login)) -> Link:
     try:
         return link_store.add(payload.url, payload.name, payload.category)
     except ValueError as error:
@@ -941,7 +970,7 @@ def create_link(payload: CreateLinkRequest, _: None = Depends(verify_token)) -> 
 
 
 @app.delete("/api/links/{link_id}")
-def delete_link(link_id: str, _: None = Depends(verify_token)) -> Link:
+def delete_link(link_id: str, _: dict[str, str | int] = Depends(require_login)) -> Link:
     try:
         return link_store.delete(link_id)
     except KeyError as error:

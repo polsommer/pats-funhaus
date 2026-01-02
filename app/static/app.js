@@ -58,7 +58,6 @@ const registerPasswordInput = document.querySelector('#registerPassword');
 const registerConfirmPasswordInput = document.querySelector('#registerConfirmPassword');
 const registerStatus = document.querySelector('.register-status');
 const uploadForm = document.querySelector('#uploadForm');
-const uploadTokenInput = document.querySelector('#uploadToken');
 const uploadFileInput = document.querySelector('#uploadFile');
 const uploadCategorySelect = document.querySelector('#uploadCategorySelect');
 const uploadStatus = document.querySelector('.upload-status');
@@ -108,6 +107,11 @@ let slideshowItems = [];
 let slideshowIndex = 0;
 let slideshowDelayMs = 4500;
 let isFullscreenActive = false;
+let authHeader = '';
+
+function buildAuthHeader(username, password) {
+  return `Basic ${btoa(`${username}:${password}`)}`;
+}
 const fullscreenApis = [
   {
     request: 'requestFullscreen',
@@ -174,9 +178,11 @@ if (loginForm) {
       }
 
       setLoginStatus(`Welcome back, ${payload.username || username}!`, 'success');
+      authHeader = buildAuthHeader(username, password);
       loginPasswordInput.value = '';
     } catch (err) {
       console.error(err);
+      authHeader = '';
       setLoginStatus(err.message || 'Unable to sign in', 'error');
     }
   });
@@ -235,11 +241,10 @@ if (registerForm) {
 
 uploadForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const tokenValue = uploadTokenInput.value.trim();
   const files = Array.from(uploadFileInput.files || []);
 
-  if (!tokenValue) {
-    setUploadStatus('Upload token is required', 'error');
+  if (!authHeader) {
+    setUploadStatus('Sign in before uploading media', 'error');
     return;
   }
 
@@ -258,7 +263,7 @@ uploadForm.addEventListener('submit', async (event) => {
     }
 
     setUploadStatus(`Uploading ${files.length} file${files.length > 1 ? 's' : ''}...`);
-    const payload = await uploadMedia(formData, tokenValue, {
+    const payload = await uploadMedia(formData, authHeader, {
       onProgress: (percent) => updateProgress(percent, `${files.length} file${files.length > 1 ? 's' : ''}`),
     });
 
@@ -268,8 +273,6 @@ uploadForm.addEventListener('submit', async (event) => {
 
     uploadForm.reset();
     updateSelectedFiles([]);
-    
-    uploadTokenInput.value = tokenValue;
 
     if (results.length) {
       const summary = results
@@ -348,13 +351,12 @@ if (categoryForm) {
 if (linkForm) {
   linkForm.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const tokenValue = uploadTokenInput.value.trim();
     const url = linkUrlInput.value.trim();
     const name = linkNameInput.value.trim();
     const category = linkCategorySelect.value.trim();
 
-    if (!tokenValue) {
-      setLinkStatus('Upload token is required', 'error');
+    if (!authHeader) {
+      setLinkStatus('Sign in before saving links', 'error');
       return;
     }
 
@@ -374,7 +376,7 @@ if (linkForm) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Upload-Token': tokenValue,
+          Authorization: authHeader,
         },
         body: JSON.stringify({ url, name, category }),
       });
@@ -400,11 +402,13 @@ if (linkForm) {
   });
 }
 
-function uploadMedia(formData, token, { onProgress } = {}) {
+function uploadMedia(formData, header, { onProgress } = {}) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/media');
-    xhr.setRequestHeader('X-Upload-Token', token);
+    if (header) {
+      xhr.setRequestHeader('Authorization', header);
+    }
 
     const handleProgress = (percent) => {
       if (typeof onProgress === 'function') {
@@ -783,14 +787,8 @@ async function handleDeleteSelected() {
   const paths = Array.from(selectedPaths);
   if (!paths.length || isDeleting) return;
 
-  const token = uploadTokenInput.value.trim();
-  if (!token) {
-    setToolbarStatus('Upload token is required to delete media', 'error');
-    try {
-      uploadTokenInput.focus({ preventScroll: true });
-    } catch (error) {
-      uploadTokenInput.focus();
-    }
+  if (!authHeader) {
+    setToolbarStatus('Sign in before deleting media', 'error');
     return;
   }
 
@@ -806,14 +804,14 @@ async function handleDeleteSelected() {
       const url = `/api/media?path=${encodeURIComponent(paths[0])}`;
       res = await httpFetch(url, {
         method: 'DELETE',
-        headers: { 'X-Upload-Token': token },
+        headers: { Authorization: authHeader },
       });
     } else {
       res = await httpFetch('/api/media/batch', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          'X-Upload-Token': token,
+          Authorization: authHeader,
         },
         body: JSON.stringify(paths),
       });
@@ -1291,10 +1289,12 @@ if (heroUploadButton) {
     event.preventDefault();
     smoothScrollToSection(uploadSection);
     window.requestAnimationFrame(() => {
+      const targetInput = authHeader ? uploadFileInput : loginUsernameInput;
+      if (!targetInput) return;
       try {
-        uploadTokenInput.focus({ preventScroll: true });
+        targetInput.focus({ preventScroll: true });
       } catch (error) {
-        uploadTokenInput.focus();
+        targetInput.focus();
       }
     });
   });
