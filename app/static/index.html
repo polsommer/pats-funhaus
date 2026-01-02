@@ -12,6 +12,7 @@
         <nav class="nav-links" aria-label="Primary">
           <a href="#gallery">Gallery</a>
           <a href="#login">Login</a>
+          <a href="#register">Register</a>
           <a href="#upload">Upload</a>
           <a href="#family">Family vibe</a>
           <a href="#about">About</a>
@@ -91,6 +92,88 @@
           <button type="submit">Sign in</button>
         </form>
         <p class="login-status" role="status"></p>
+      </div>
+    </section>
+
+    <section id="register" class="register-section">
+      <div class="section-header">
+        <p class="eyebrow">Register</p>
+        <h2>Join the family gallery</h2>
+        <p class="upload-subtext">
+          Create a new account to upload photos, comment on memories, and keep the gallery growing.
+        </p>
+      </div>
+      <div class="register-panel">
+        <div class="panel-header">
+          <div>
+            <p class="upload-title">New account</p>
+            <p class="upload-tip">Use your real name so relatives can recognize you.</p>
+          </div>
+        </div>
+        <form id="registerForm" class="register-form">
+          <div class="field-row">
+            <label class="field">
+              <span>First name</span>
+              <input
+                type="text"
+                id="registerFirstName"
+                name="firstName"
+                autocomplete="given-name"
+                placeholder="Sam"
+                required
+              />
+            </label>
+            <label class="field">
+              <span>Last name</span>
+              <input
+                type="text"
+                id="registerLastName"
+                name="lastName"
+                autocomplete="family-name"
+                placeholder="Rivera"
+              />
+            </label>
+          </div>
+          <div class="field-row">
+            <label class="field">
+              <span>Email</span>
+              <input
+                type="email"
+                id="registerEmail"
+                name="email"
+                autocomplete="email"
+                placeholder="sam@example.com"
+                required
+              />
+            </label>
+            <label class="field">
+              <span>Password</span>
+              <input
+                type="password"
+                id="registerPassword"
+                name="password"
+                autocomplete="new-password"
+                placeholder="Create a password"
+                required
+              />
+            </label>
+          </div>
+          <div class="field-row">
+            <label class="field">
+              <span>Confirm password</span>
+              <input
+                type="password"
+                id="registerConfirmPassword"
+                name="confirmPassword"
+                autocomplete="new-password"
+                placeholder="Re-enter your password"
+                required
+              />
+            </label>
+          </div>
+          <button type="submit">Create account</button>
+        </form>
+        <p class="register-status" role="status"></p>
       </div>
     </section>
 
