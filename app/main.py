@@ -470,6 +470,67 @@ class LoginResponse(BaseModel):
     username: str
 
 
+class RegisterRequest(BaseModel):
+    first_name: str
+    last_name: str | None = None
+    email: str
+    password: str
+
+
+class RegisterResponse(BaseModel):
+    message: str
+    user_id: int
+    email: str
+
+
+@app.post("/api/register", response_model=RegisterResponse, status_code=201)
+def register(payload: RegisterRequest) -> RegisterResponse:
+    first_name = payload.first_name.strip()
+    last_name = (
+        payload.last_name.strip()
+        if payload.last_name and payload.last_name.strip()
+        else None
+    )
+    email = payload.email.strip().lower()
+    password = payload.password
+
+    if not first_name or not email or not password:
+        raise HTTPException(status_code=400, detail="First name, email, and password are required")
+
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="Enter a valid email address")
+
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+
+    connection = _get_auth_connection(settings.auth_db_name)
+    cursor = connection.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=409, detail="Email already registered")
+
+        password_hash = _build_password_hash(password)
+        cursor.execute(
+            """
+            INSERT INTO users (first_name, last_name, email, password_hash, role)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (first_name, last_name, email, password_hash, "member"),
+        )
+        connection.commit()
+        user_id = cursor.lastrowid
+    finally:
+        cursor.close()
+        connection.close()
+
+    return RegisterResponse(
+        message="Registration successful",
+        user_id=user_id,
+        email=email,
+    )
+
+
 @app.post("/api/login", response_model=LoginResponse)
 def login(payload: LoginRequest) -> LoginResponse:
     username = payload.username.strip()

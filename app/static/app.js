@@ -50,6 +50,13 @@ const loginForm = document.querySelector('#loginForm');
 const loginUsernameInput = document.querySelector('#loginUsername');
 const loginPasswordInput = document.querySelector('#loginPassword');
 const loginStatus = document.querySelector('.login-status');
+const registerForm = document.querySelector('#registerForm');
+const registerFirstNameInput = document.querySelector('#registerFirstName');
+const registerLastNameInput = document.querySelector('#registerLastName');
+const registerEmailInput = document.querySelector('#registerEmail');
+const registerPasswordInput = document.querySelector('#registerPassword');
+const registerConfirmPasswordInput = document.querySelector('#registerConfirmPassword');
+const registerStatus = document.querySelector('.register-status');
 const uploadForm = document.querySelector('#uploadForm');
 const uploadTokenInput = document.querySelector('#uploadToken');
 const uploadFileInput = document.querySelector('#uploadFile');
@@ -171,6 +178,57 @@ if (loginForm) {
     } catch (err) {
       console.error(err);
       setLoginStatus(err.message || 'Unable to sign in', 'error');
+    }
+  });
+}
+
+if (registerForm) {
+  registerForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const firstName = registerFirstNameInput.value.trim();
+    const lastName = registerLastNameInput.value.trim();
+    const email = registerEmailInput.value.trim();
+    const password = registerPasswordInput.value;
+    const confirmPassword = registerConfirmPasswordInput.value;
+
+    if (!firstName || !email || !password || !confirmPassword) {
+      setRegisterStatus('First name, email, and password are required.', 'error');
+      return;
+    }
+
+    if (password.length < 8) {
+      setRegisterStatus('Password must be at least 8 characters long.', 'error');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setRegisterStatus('Passwords do not match.', 'error');
+      return;
+    }
+
+    try {
+      setRegisterStatus('Creating your account...');
+      const res = await httpFetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          first_name: firstName,
+          last_name: lastName || null,
+          email,
+          password,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload.detail || 'Unable to register');
+      }
+
+      setRegisterStatus('Account created! You can sign in now.', 'success');
+      registerPasswordInput.value = '';
+      registerConfirmPasswordInput.value = '';
+    } catch (err) {
+      console.error(err);
+      setRegisterStatus(err.message || 'Unable to register', 'error');
     }
   });
 }
@@ -1045,6 +1103,15 @@ function setLoginStatus(message, state = 'info') {
   loginStatus.classList.remove('pop');
   void loginStatus.offsetWidth;
   loginStatus.classList.add('pop');
+}
+
+function setRegisterStatus(message, state = 'info') {
+  if (!registerStatus) return;
+  registerStatus.textContent = message;
+  registerStatus.dataset.state = state;
+  registerStatus.classList.remove('pop');
+  void registerStatus.offsetWidth;
+  registerStatus.classList.add('pop');
 }
 
 function setCategoryStatus(message, state = 'info') {

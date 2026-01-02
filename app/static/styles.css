@@ -381,12 +381,14 @@ main,
   box-shadow: var(--shadow);
 }
 
-.login-section {
+.login-section,
+.register-section {
   display: grid;
   gap: 1.2rem;
 }
 
-.login-panel {
+.login-panel,
+.register-panel {
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(255, 159, 127, 0.4);
   border-radius: 16px;
@@ -395,13 +397,15 @@ main,
   max-width: 680px;
 }
 
-.login-form {
+.login-form,
+.register-form {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
 }
 
-.login-form button {
+.login-form button,
+.register-form button {
   padding: 0.65rem 1rem;
   border-radius: 10px;
   border: 1px solid rgba(99, 102, 241, 0.55);
@@ -412,7 +416,8 @@ main,
   transition: transform 140ms ease, box-shadow 140ms ease;
 }
 
-.login-form button:hover {
+.login-form button:hover,
+.register-form button:hover {
   transform: translateY(-1px);
   box-shadow: 0 18px 32px rgba(34, 211, 238, 0.25);
 }
@@ -657,7 +662,8 @@ main,
 
 .upload-status,
 .link-status,
-.login-status {
+.login-status,
+.register-status {
   margin: 0;
   font-size: 0.95rem;
   color: var(--muted);
@@ -671,18 +677,21 @@ main,
 
 .upload-status[data-state='error'],
 .link-status[data-state='error'],
-.login-status[data-state='error'] {
+.login-status[data-state='error'],
+.register-status[data-state='error'] {
   color: #f87171;
 }
 
 .upload-status[data-state='success'],
 .link-status[data-state='success'],
-.login-status[data-state='success'] {
+.login-status[data-state='success'],
+.register-status[data-state='success'] {
   color: #4ade80;
 }
 
 .upload-status.pop,
-.login-status.pop {
+.login-status.pop,
+.register-status.pop {
   animation: statusPop 220ms ease;
 }
 
