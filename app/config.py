@@ -43,8 +43,8 @@ class Settings:
         self.login_password: str = os.getenv("LOGIN_PASSWORD", "welcome-home")
         self.auth_db_host: str = os.getenv("AUTH_DB_HOST", "127.0.0.1")
         self.auth_db_port: int = int(os.getenv("AUTH_DB_PORT", "3306"))
-        self.auth_db_user: str = os.getenv("AUTH_DB_USER", "root")
-        self.auth_db_password: str = os.getenv("AUTH_DB_PASSWORD", "")
+        self.auth_db_user: str = os.getenv("AUTH_DB_USER", "admin")
+        self.auth_db_password: str = os.getenv("AUTH_DB_PASSWORD", "strongpassword")
         self.auth_db_name: str = os.getenv("AUTH_DB_NAME", "family_gallery")
 
         # Maximum upload size in bytes (default 200MB for video)
