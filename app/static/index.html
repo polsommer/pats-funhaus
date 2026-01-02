@@ -11,6 +11,7 @@
         <div class="logo"><span>Pi</span>Family House</div>
         <nav class="nav-links" aria-label="Primary">
           <a href="#gallery">Gallery</a>
+          <a href="#login">Login</a>
           <a href="#upload">Upload</a>
           <a href="#family">Family vibe</a>
           <a href="#about">About</a>
@@ -46,6 +47,52 @@
           </div>
         </div>
       </section>
+
+    <section id="login" class="login-section">
+      <div class="section-header">
+        <p class="eyebrow">Login</p>
+        <h2>Sign in before sharing</h2>
+        <p class="upload-subtext">
+          Use the household credentials to unlock uploads and link saves from anywhere.
+        </p>
+      </div>
+      <div class="login-panel">
+        <div class="panel-header">
+          <div>
+            <p class="upload-title">Family login</p>
+            <p class="upload-tip">Credentials are set with <code>LOGIN_USERNAME</code> and <code>LOGIN_PASSWORD</code>.</p>
+          </div>
+        </div>
+        <form id="loginForm" class="login-form">
+          <div class="field-row">
+            <label class="field">
+              <span>Username</span>
+              <input
+                type="text"
+                id="loginUsername"
+                name="username"
+                autocomplete="username"
+                placeholder="family"
+                required
+              />
+            </label>
+            <label class="field">
+              <span>Password</span>
+              <input
+                type="password"
+                id="loginPassword"
+                name="password"
+                autocomplete="current-password"
+                placeholder="••••••••"
+                required
+              />
+            </label>
+          </div>
+          <button type="submit">Sign in</button>
+        </form>
+        <p class="login-status" role="status"></p>
+      </div>
+    </section>
 
     <section id="upload" class="upload-section">
       <div class="section-header">

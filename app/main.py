@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import secrets
@@ -23,6 +24,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+import mysql.connector
 from pydantic import BaseModel
 
 from .config import settings
@@ -40,6 +42,16 @@ app.add_middleware(
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+AUTH_SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(128) NOT NULL,
+    salt VARCHAR(64) NOT NULL,
+    created_at DATETIME NOT NULL
+) ENGINE=InnoDB;
+"""
+
 
 def verify_token(x_upload_token: Annotated[str | None, Header()] = None) -> None:
     if settings.upload_token is None:
@@ -54,6 +66,49 @@ def is_allowed_file(filename: str) -> bool:
 
 def normalize_category(category: str | None) -> str | None:
     return settings.normalize_category(category)
+
+def _get_auth_connection() -> mysql.connector.connection.MySQLConnection:
+    return mysql.connector.connect(
+        host=settings.auth_db_host,
+        port=settings.auth_db_port,
+        user=settings.auth_db_user,
+        password=settings.auth_db_password,
+        database=settings.auth_db_name,
+    )
+
+
+def _hash_password(password: str, salt: bytes) -> str:
+    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000).hex()
+
+
+def _ensure_auth_user() -> None:
+    connection = _get_auth_connection()
+    cursor = connection.cursor(dictionary=True)
+    try:
+        cursor.execute(AUTH_SCHEMA)
+        cursor.execute(
+            "SELECT id FROM users WHERE username = %s",
+            (settings.login_username,),
+        )
+        existing = cursor.fetchone()
+        if existing:
+            return
+
+        salt = secrets.token_bytes(16)
+        password_hash = _hash_password(settings.login_password, salt)
+        cursor.execute(
+            "INSERT INTO users (username, password_hash, salt, created_at) VALUES (%s, %s, %s, %s)",
+            (settings.login_username, password_hash, salt.hex(), datetime.utcnow()),
+        )
+        connection.commit()
+    finally:
+        cursor.close()
+        connection.close()
+
+
+@app.on_event("startup")
+def init_auth_db() -> None:
+    _ensure_auth_user()
 
 
 class Category(BaseModel):
@@ -264,6 +319,45 @@ class CreateLinkRequest(BaseModel):
     url: str
     name: str | None = None
     category: str | None = None
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    message: str
+    username: str
+
+
+@app.post("/api/login", response_model=LoginResponse)
+def login(payload: LoginRequest) -> LoginResponse:
+    username = payload.username.strip()
+    if not username or not payload.password:
+        raise HTTPException(status_code=400, detail="Username and password are required")
+
+    connection = _get_auth_connection()
+    cursor = connection.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT password_hash, salt FROM users WHERE username = %s",
+            (username,),
+        )
+        record = cursor.fetchone()
+    finally:
+        cursor.close()
+        connection.close()
+
+    if not record:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    salt = bytes.fromhex(record["salt"])
+    candidate_hash = _hash_password(payload.password, salt)
+    if not secrets.compare_digest(candidate_hash, record["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    return LoginResponse(message="Login successful", username=username)
 
 
 @app.get("/api/media")

@@ -3,3 +3,5 @@ __pycache__/
 .venv/
 app/media/*
 !app/media/.gitkeep
+app/categories.json
+app/links.json
