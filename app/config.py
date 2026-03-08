@@ -39,8 +39,8 @@ class Settings:
         ).expanduser().resolve()
         self.link_store_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Maximum upload size in bytes (default 200MB for video)
-        self.max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", 200 * 1024 * 1024))
+        # Maximum upload size in bytes. Set to 0 or a negative value for no limit.
+        self.max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", "0"))
 
     @staticmethod
     def normalize_category(category: str | None) -> str | None:

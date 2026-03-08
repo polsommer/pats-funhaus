@@ -422,7 +422,7 @@ def _stream_to_disk(upload: UploadFile, target_path: Path, chunk_size: int = 102
             if not chunk:
                 break
             total_bytes += len(chunk)
-            if total_bytes > settings.max_upload_bytes:
+            if settings.max_upload_bytes > 0 and total_bytes > settings.max_upload_bytes:
                 raise HTTPException(status_code=413, detail="File too large")
             buffer.write(chunk)
 
