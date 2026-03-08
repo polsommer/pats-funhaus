@@ -4,7 +4,7 @@ A lightweight FastAPI-powered gallery designed for Raspberry Pi 4. It serves ima
 
 ## Features
 - REST API for listing and retrieving media from the local filesystem
-- Authenticated uploads via `X-Upload-Token` header with file type and size safeguards
+- Authenticated uploads via `X-Upload-Token` header with file type safeguards and optional size limits
 - Responsive grid gallery with thumbnail previews, modal/lightbox, and inline video playback
 - Minimal dependencies suitable for ARM SBCs
 
@@ -33,6 +33,9 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 Visit `http://localhost:8000` for the gallery UI. Media is stored under `app/media` by default; override with `MEDIA_DIR`.
+
+Environment knobs:
+- `MAX_UPLOAD_BYTES`: optional upload cap in bytes. Default is `0` (no limit, useful for very large videos). Set a positive value to enforce a limit.
 
 ### Uploading
 
