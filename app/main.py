@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import mimetypes
 import secrets
@@ -15,6 +14,7 @@ from fastapi import (
     FastAPI,
     File,
     Form,
+    Header,
     HTTPException,
     UploadFile,
     Query,
@@ -23,8 +23,6 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-import mysql.connector
 from pydantic import BaseModel
 
 from .config import settings
@@ -42,145 +40,12 @@ app.add_middleware(
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-AUTH_DB_SCHEMA = [
-    """
-    CREATE TABLE IF NOT EXISTS users (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        first_name VARCHAR(50) NOT NULL,
-        last_name VARCHAR(50),
-        email VARCHAR(100) UNIQUE,
-        password_hash VARCHAR(255),
-        role ENUM('admin','member','guest') DEFAULT 'member',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS albums (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        parent_id INT NULL,
-        title VARCHAR(150) NOT NULL,
-        description TEXT,
-        created_by INT,
-        visibility ENUM('private','family','public') DEFAULT 'family',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (parent_id) REFERENCES albums(id) ON DELETE CASCADE,
-        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS media (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        album_id INT NOT NULL,
-        uploaded_by INT,
-        media_type ENUM('photo','video') NOT NULL,
-        mime_type VARCHAR(50),
-        title VARCHAR(150),
-        description TEXT,
-        file_path VARCHAR(255) NOT NULL,
-        thumbnail_path VARCHAR(255),
-        file_size BIGINT,
-        duration_seconds INT,
-        taken_at DATETIME,
-        visibility ENUM('private','family','public') DEFAULT 'family',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE,
-        FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL,
-        INDEX idx_album (album_id),
-        INDEX idx_media_type (media_type),
-        INDEX idx_visibility (visibility)
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS tags (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(50) UNIQUE NOT NULL
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS media_tags (
-        media_id INT,
-        tag_id INT,
-        PRIMARY KEY (media_id, tag_id),
-        FOREIGN KEY (media_id) REFERENCES media(id) ON DELETE CASCADE,
-        FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS media_people (
-        media_id INT,
-        user_id INT,
-        PRIMARY KEY (media_id, user_id),
-        FOREIGN KEY (media_id) REFERENCES media(id) ON DELETE CASCADE,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS comments (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        media_id INT NOT NULL,
-        user_id INT,
-        comment TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (media_id) REFERENCES media(id) ON DELETE CASCADE,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS likes (
-        media_id INT,
-        user_id INT,
-        PRIMARY KEY (media_id, user_id),
-        FOREIGN KEY (media_id) REFERENCES media(id) ON DELETE CASCADE,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS album_permissions (
-        album_id INT,
-        user_id INT,
-        permission ENUM('view','upload','admin') DEFAULT 'view',
-        PRIMARY KEY (album_id, user_id),
-        FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-    """,
-]
 
-security = HTTPBasic()
-
-def require_login(
-    credentials: Annotated[HTTPBasicCredentials, Depends(security)],
-) -> dict[str, str | int]:
-    username = credentials.username.strip()
-    password = credentials.password
-
-    if not username or not password:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-
-    connection = _get_auth_connection(settings.auth_db_name)
-    cursor = connection.cursor(dictionary=True)
-    try:
-        cursor.execute(
-            "SELECT id, password_hash, email, first_name FROM users WHERE email = %s OR first_name = %s",
-            (username, username),
-        )
-        record = cursor.fetchone()
-    finally:
-        cursor.close()
-        connection.close()
-
-    if not record or not _verify_password(password, record["password_hash"]):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-
-    return record
+def verify_token(x_upload_token: Annotated[str | None, Header()] = None) -> None:
+    if settings.upload_token is None:
+        raise HTTPException(status_code=400, detail="UPLOAD_TOKEN not configured on server")
+    if not secrets.compare_digest(x_upload_token or "", settings.upload_token):
+        raise HTTPException(status_code=401, detail="Invalid upload token")
 
 
 def is_allowed_file(filename: str) -> bool:
@@ -189,94 +54,6 @@ def is_allowed_file(filename: str) -> bool:
 
 def normalize_category(category: str | None) -> str | None:
     return settings.normalize_category(category)
-
-def _get_auth_connection(
-    database: str | None = None,
-) -> mysql.connector.connection.MySQLConnection:
-    return mysql.connector.connect(
-        host=settings.auth_db_host,
-        port=settings.auth_db_port,
-        user=settings.auth_db_user,
-        password=settings.auth_db_password,
-        database=database,
-    )
-
-
-def _hash_password(password: str, salt: bytes) -> str:
-    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000).hex()
-
-
-def _build_password_hash(password: str) -> str:
-    salt = secrets.token_bytes(16)
-    password_hash = _hash_password(password, salt)
-    return f"{salt.hex()}${password_hash}"
-
-
-def _verify_password(password: str, stored_hash: str) -> bool:
-    if "$" not in stored_hash:
-        return secrets.compare_digest(password, stored_hash)
-    salt_hex, password_hash = stored_hash.split("$", 1)
-    try:
-        salt = bytes.fromhex(salt_hex)
-    except ValueError:
-        return False
-    candidate_hash = _hash_password(password, salt)
-    return secrets.compare_digest(candidate_hash, password_hash)
-
-
-def _ensure_auth_user() -> None:
-    server_connection = _get_auth_connection()
-    server_cursor = server_connection.cursor(dictionary=True)
-    try:
-        server_cursor.execute(
-            f"""
-            CREATE DATABASE IF NOT EXISTS `{settings.auth_db_name}`
-            CHARACTER SET utf8mb4
-            COLLATE utf8mb4_unicode_ci
-            """
-        )
-        server_connection.commit()
-    finally:
-        server_cursor.close()
-        server_connection.close()
-
-    connection = _get_auth_connection(settings.auth_db_name)
-    cursor = connection.cursor(dictionary=True)
-    try:
-        for statement in AUTH_DB_SCHEMA:
-            cursor.execute(statement)
-
-        cursor.execute(
-            "SELECT id FROM users WHERE email = %s OR first_name = %s",
-            (settings.login_username, settings.login_username),
-        )
-        existing = cursor.fetchone()
-        if existing:
-            return
-
-        password_hash = _build_password_hash(settings.login_password)
-        cursor.execute(
-            """
-            INSERT INTO users (first_name, last_name, email, password_hash, role)
-            VALUES (%s, %s, %s, %s, %s)
-            """,
-            (
-                settings.login_username,
-                None,
-                settings.login_username,
-                password_hash,
-                "admin",
-            ),
-        )
-        connection.commit()
-    finally:
-        cursor.close()
-        connection.close()
-
-
-@app.on_event("startup")
-def init_auth_db() -> None:
-    _ensure_auth_user()
 
 
 class Category(BaseModel):
@@ -489,104 +266,6 @@ class CreateLinkRequest(BaseModel):
     category: str | None = None
 
 
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-
-class LoginResponse(BaseModel):
-    message: str
-    username: str
-
-
-class RegisterRequest(BaseModel):
-    first_name: str
-    last_name: str | None = None
-    email: str
-    password: str
-
-
-class RegisterResponse(BaseModel):
-    message: str
-    user_id: int
-    email: str
-
-
-@app.post("/api/register", response_model=RegisterResponse, status_code=201)
-def register(payload: RegisterRequest) -> RegisterResponse:
-    first_name = payload.first_name.strip()
-    last_name = (
-        payload.last_name.strip()
-        if payload.last_name and payload.last_name.strip()
-        else None
-    )
-    email = payload.email.strip().lower()
-    password = payload.password
-
-    if not first_name or not email or not password:
-        raise HTTPException(status_code=400, detail="First name, email, and password are required")
-
-    if "@" not in email or "." not in email.split("@")[-1]:
-        raise HTTPException(status_code=400, detail="Enter a valid email address")
-
-    if len(password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
-
-    connection = _get_auth_connection(settings.auth_db_name)
-    cursor = connection.cursor(dictionary=True)
-    try:
-        cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
-        if cursor.fetchone():
-            raise HTTPException(status_code=409, detail="Email already registered")
-
-        password_hash = _build_password_hash(password)
-        cursor.execute(
-            """
-            INSERT INTO users (first_name, last_name, email, password_hash, role)
-            VALUES (%s, %s, %s, %s, %s)
-            """,
-            (first_name, last_name, email, password_hash, "member"),
-        )
-        connection.commit()
-        user_id = cursor.lastrowid
-    finally:
-        cursor.close()
-        connection.close()
-
-    return RegisterResponse(
-        message="Registration successful",
-        user_id=user_id,
-        email=email,
-    )
-
-
-@app.post("/api/login", response_model=LoginResponse)
-def login(payload: LoginRequest) -> LoginResponse:
-    username = payload.username.strip()
-    if not username or not payload.password:
-        raise HTTPException(status_code=400, detail="Username and password are required")
-
-    connection = _get_auth_connection(settings.auth_db_name)
-    cursor = connection.cursor(dictionary=True)
-    try:
-        cursor.execute(
-            "SELECT password_hash FROM users WHERE email = %s OR first_name = %s",
-            (username, username),
-        )
-        record = cursor.fetchone()
-    finally:
-        cursor.close()
-        connection.close()
-
-    if not record:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    if not _verify_password(payload.password, record["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    return LoginResponse(message="Login successful", username=username)
-
-
 @app.get("/api/media")
 def list_media(
     category: Annotated[str | None, Query(alias="category")] = None,
@@ -657,7 +336,7 @@ def upload_media(
     response: Response,
     files: Annotated[list[UploadFile], File(...)],
     category: Annotated[str | None, Form()] = None,
-    _: dict[str, str | int] = Depends(require_login),
+    _: None = Depends(verify_token),
 ) -> dict[str, str | dict[str, str] | list[dict[str, str | None]] | None]:
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
@@ -811,7 +490,7 @@ def _delete_link_by_path(link_path: str) -> dict[str, str]:
 @app.delete("/api/media")
 def delete_media(
     path: Annotated[str, Query(alias="path")],
-    _: dict[str, str | int] = Depends(require_login),
+    _: None = Depends(verify_token),
 ) -> dict[str, str]:
     if _is_link_path(path):
         return _delete_link_by_path(path)
@@ -829,7 +508,7 @@ def delete_media(
 def delete_media_batch(
     payload: Annotated[list[str], Body(..., embed=False)],
     response: Response,
-    _: dict[str, str | int] = Depends(require_login),
+    _: None = Depends(verify_token),
 ) -> dict[str, list[dict[str, str | int]]]:
     if not isinstance(payload, list) or not payload:
         raise HTTPException(status_code=400, detail="Provide at least one path to delete")
@@ -962,7 +641,7 @@ def list_links() -> list[Link]:
 
 
 @app.post("/api/links", status_code=201)
-def create_link(payload: CreateLinkRequest, _: dict[str, str | int] = Depends(require_login)) -> Link:
+def create_link(payload: CreateLinkRequest, _: None = Depends(verify_token)) -> Link:
     try:
         return link_store.add(payload.url, payload.name, payload.category)
     except ValueError as error:
@@ -970,7 +649,7 @@ def create_link(payload: CreateLinkRequest, _: dict[str, str | int] = Depends(re
 
 
 @app.delete("/api/links/{link_id}")
-def delete_link(link_id: str, _: dict[str, str | int] = Depends(require_login)) -> Link:
+def delete_link(link_id: str, _: None = Depends(verify_token)) -> Link:
     try:
         return link_store.delete(link_id)
     except KeyError as error:

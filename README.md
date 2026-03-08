@@ -4,7 +4,7 @@ A lightweight FastAPI-powered gallery designed for Raspberry Pi 4. It serves ima
 
 ## Features
 - REST API for listing and retrieving media from the local filesystem
-- Authenticated uploads via login credentials with file type and size safeguards
+- Authenticated uploads via `X-Upload-Token` header with file type and size safeguards
 - Responsive grid gallery with thumbnail previews, modal/lightbox, and inline video playback
 - Minimal dependencies suitable for ARM SBCs
 
@@ -20,7 +20,7 @@ Install a Python runtime with venv support and a tool for downloads:
 ```bash
 ./quickstart.sh
 ```
-The script prompts for your login credentials, media directory, host, and port, sets up a virtual environment, installs dependencies, and optionally starts Uvicorn immediately. Run it from the repo root. Use `AUTO_START=no ./quickstart.sh` to skip the auto-start prompt.
+The script prompts for your upload token, media directory, host, and port, sets up a virtual environment, installs dependencies, and optionally starts Uvicorn immediately. Run it from the repo root. Use `AUTO_START=no ./quickstart.sh` to skip the auto-start prompt.
 
 ### Manual setup
 ```bash
@@ -28,8 +28,7 @@ cd app
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export LOGIN_USERNAME=family
-export LOGIN_PASSWORD=welcome-home
+export UPLOAD_TOKEN=changeme
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -39,7 +38,7 @@ Visit `http://localhost:8000` for the gallery UI. Media is stored under `app/med
 
 ```bash
 curl -X POST \
-  -u "$LOGIN_USERNAME:$LOGIN_PASSWORD" \
+  -H "X-Upload-Token: $UPLOAD_TOKEN" \
   -F "file=@/path/to/photo.jpg" \
   http://localhost:8000/api/media
 ```
@@ -50,7 +49,7 @@ curl -X POST \
 
   ```bash
   curl -X DELETE \
-    -u "$LOGIN_USERNAME:$LOGIN_PASSWORD" \
+    -H "X-Upload-Token: $UPLOAD_TOKEN" \
     "http://localhost:8000/api/media?path=holiday/beach.jpg"
   ```
 
@@ -60,7 +59,7 @@ curl -X POST \
 
   ```bash
   curl -X DELETE \
-    -u "$LOGIN_USERNAME:$LOGIN_PASSWORD" \
+    -H "X-Upload-Token: $UPLOAD_TOKEN" \
     -H "Content-Type: application/json" \
     -d '["holiday/beach.jpg", "clips/birthday.mp4"]' \
     http://localhost:8000/api/media/batch
@@ -97,7 +96,7 @@ After=network.target
 [Service]
 User=pi
 WorkingDirectory=/home/pi/pats-funhaus/app
-Environment="LOGIN_USERNAME=family" "LOGIN_PASSWORD=welcome-home" "MEDIA_DIR=/home/pi/media"
+Environment="UPLOAD_TOKEN=changeme" "MEDIA_DIR=/home/pi/media"
 ExecStart=/usr/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 
@@ -126,8 +125,7 @@ Build and run on Pi:
 ```bash
 docker build -t pi-media .
 docker run -d --name pi-media \
-  -e LOGIN_USERNAME=family \
-  -e LOGIN_PASSWORD=welcome-home \
+  -e UPLOAD_TOKEN=changeme \
   -v /home/pi/media:/media \
   -p 8000:8000 pi-media
 ```

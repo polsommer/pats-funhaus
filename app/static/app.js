@@ -46,18 +46,8 @@ const modal = document.querySelector('.modal');
 const modalContent = document.querySelector('.modal-content');
 const closeBtn = document.querySelector('.close');
 const filterSelect = document.querySelector('#categoryFilter');
-const loginForm = document.querySelector('#loginForm');
-const loginUsernameInput = document.querySelector('#loginUsername');
-const loginPasswordInput = document.querySelector('#loginPassword');
-const loginStatus = document.querySelector('.login-status');
-const registerForm = document.querySelector('#registerForm');
-const registerFirstNameInput = document.querySelector('#registerFirstName');
-const registerLastNameInput = document.querySelector('#registerLastName');
-const registerEmailInput = document.querySelector('#registerEmail');
-const registerPasswordInput = document.querySelector('#registerPassword');
-const registerConfirmPasswordInput = document.querySelector('#registerConfirmPassword');
-const registerStatus = document.querySelector('.register-status');
 const uploadForm = document.querySelector('#uploadForm');
+const uploadTokenInput = document.querySelector('#uploadToken');
 const uploadFileInput = document.querySelector('#uploadFile');
 const uploadCategorySelect = document.querySelector('#uploadCategorySelect');
 const uploadStatus = document.querySelector('.upload-status');
@@ -107,11 +97,6 @@ let slideshowItems = [];
 let slideshowIndex = 0;
 let slideshowDelayMs = 4500;
 let isFullscreenActive = false;
-let authHeader = '';
-
-function buildAuthHeader(username, password) {
-  return `Basic ${btoa(`${username}:${password}`)}`;
-}
 const fullscreenApis = [
   {
     request: 'requestFullscreen',
@@ -154,97 +139,13 @@ if (deleteSelectedButton) deleteSelectedButton.addEventListener('click', handleD
 if (slideshowButton) slideshowButton.addEventListener('click', toggleSlideshow);
 initializeSlideshowDelay();
 
-if (loginForm) {
-  loginForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const username = loginUsernameInput.value.trim();
-    const password = loginPasswordInput.value;
-
-    if (!username || !password) {
-      setLoginStatus('Username and password are required', 'error');
-      return;
-    }
-
-    try {
-      setLoginStatus('Signing in...');
-      const res = await httpFetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload.detail || 'Unable to sign in');
-      }
-
-      setLoginStatus(`Welcome back, ${payload.username || username}!`, 'success');
-      authHeader = buildAuthHeader(username, password);
-      loginPasswordInput.value = '';
-    } catch (err) {
-      console.error(err);
-      authHeader = '';
-      setLoginStatus(err.message || 'Unable to sign in', 'error');
-    }
-  });
-}
-
-if (registerForm) {
-  registerForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const firstName = registerFirstNameInput.value.trim();
-    const lastName = registerLastNameInput.value.trim();
-    const email = registerEmailInput.value.trim();
-    const password = registerPasswordInput.value;
-    const confirmPassword = registerConfirmPasswordInput.value;
-
-    if (!firstName || !email || !password || !confirmPassword) {
-      setRegisterStatus('First name, email, and password are required.', 'error');
-      return;
-    }
-
-    if (password.length < 8) {
-      setRegisterStatus('Password must be at least 8 characters long.', 'error');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setRegisterStatus('Passwords do not match.', 'error');
-      return;
-    }
-
-    try {
-      setRegisterStatus('Creating your account...');
-      const res = await httpFetch('/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          first_name: firstName,
-          last_name: lastName || null,
-          email,
-          password,
-        }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload.detail || 'Unable to register');
-      }
-
-      setRegisterStatus('Account created! You can sign in now.', 'success');
-      registerPasswordInput.value = '';
-      registerConfirmPasswordInput.value = '';
-    } catch (err) {
-      console.error(err);
-      setRegisterStatus(err.message || 'Unable to register', 'error');
-    }
-  });
-}
-
 uploadForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  const tokenValue = uploadTokenInput.value.trim();
   const files = Array.from(uploadFileInput.files || []);
 
-  if (!authHeader) {
-    setUploadStatus('Sign in before uploading media', 'error');
+  if (!tokenValue) {
+    setUploadStatus('Upload token is required', 'error');
     return;
   }
 
@@ -263,7 +164,7 @@ uploadForm.addEventListener('submit', async (event) => {
     }
 
     setUploadStatus(`Uploading ${files.length} file${files.length > 1 ? 's' : ''}...`);
-    const payload = await uploadMedia(formData, authHeader, {
+    const payload = await uploadMedia(formData, tokenValue, {
       onProgress: (percent) => updateProgress(percent, `${files.length} file${files.length > 1 ? 's' : ''}`),
     });
 
@@ -273,6 +174,8 @@ uploadForm.addEventListener('submit', async (event) => {
 
     uploadForm.reset();
     updateSelectedFiles([]);
+    
+    uploadTokenInput.value = tokenValue;
 
     if (results.length) {
       const summary = results
@@ -351,12 +254,13 @@ if (categoryForm) {
 if (linkForm) {
   linkForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    const tokenValue = uploadTokenInput.value.trim();
     const url = linkUrlInput.value.trim();
     const name = linkNameInput.value.trim();
     const category = linkCategorySelect.value.trim();
 
-    if (!authHeader) {
-      setLinkStatus('Sign in before saving links', 'error');
+    if (!tokenValue) {
+      setLinkStatus('Upload token is required', 'error');
       return;
     }
 
@@ -376,7 +280,7 @@ if (linkForm) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: authHeader,
+          'X-Upload-Token': tokenValue,
         },
         body: JSON.stringify({ url, name, category }),
       });
@@ -402,13 +306,11 @@ if (linkForm) {
   });
 }
 
-function uploadMedia(formData, header, { onProgress } = {}) {
+function uploadMedia(formData, token, { onProgress } = {}) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/media');
-    if (header) {
-      xhr.setRequestHeader('Authorization', header);
-    }
+    xhr.setRequestHeader('X-Upload-Token', token);
 
     const handleProgress = (percent) => {
       if (typeof onProgress === 'function') {
@@ -787,8 +689,14 @@ async function handleDeleteSelected() {
   const paths = Array.from(selectedPaths);
   if (!paths.length || isDeleting) return;
 
-  if (!authHeader) {
-    setToolbarStatus('Sign in before deleting media', 'error');
+  const token = uploadTokenInput.value.trim();
+  if (!token) {
+    setToolbarStatus('Upload token is required to delete media', 'error');
+    try {
+      uploadTokenInput.focus({ preventScroll: true });
+    } catch (error) {
+      uploadTokenInput.focus();
+    }
     return;
   }
 
@@ -804,14 +712,14 @@ async function handleDeleteSelected() {
       const url = `/api/media?path=${encodeURIComponent(paths[0])}`;
       res = await httpFetch(url, {
         method: 'DELETE',
-        headers: { Authorization: authHeader },
+        headers: { 'X-Upload-Token': token },
       });
     } else {
       res = await httpFetch('/api/media/batch', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: authHeader,
+          'X-Upload-Token': token,
         },
         body: JSON.stringify(paths),
       });
@@ -1094,24 +1002,6 @@ function setLinkStatus(message, state = 'info') {
   linkStatus.classList.add('pop');
 }
 
-function setLoginStatus(message, state = 'info') {
-  if (!loginStatus) return;
-  loginStatus.textContent = message;
-  loginStatus.dataset.state = state;
-  loginStatus.classList.remove('pop');
-  void loginStatus.offsetWidth;
-  loginStatus.classList.add('pop');
-}
-
-function setRegisterStatus(message, state = 'info') {
-  if (!registerStatus) return;
-  registerStatus.textContent = message;
-  registerStatus.dataset.state = state;
-  registerStatus.classList.remove('pop');
-  void registerStatus.offsetWidth;
-  registerStatus.classList.add('pop');
-}
-
 function setCategoryStatus(message, state = 'info') {
   if (!categoryStatus) return;
   categoryStatus.textContent = message;
@@ -1289,12 +1179,10 @@ if (heroUploadButton) {
     event.preventDefault();
     smoothScrollToSection(uploadSection);
     window.requestAnimationFrame(() => {
-      const targetInput = authHeader ? uploadFileInput : loginUsernameInput;
-      if (!targetInput) return;
       try {
-        targetInput.focus({ preventScroll: true });
+        uploadTokenInput.focus({ preventScroll: true });
       } catch (error) {
-        targetInput.focus();
+        uploadTokenInput.focus();
       }
     });
   });

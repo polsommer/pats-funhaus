@@ -15,6 +15,9 @@ class Settings:
         ).expanduser().resolve()
         self.media_dir.mkdir(parents=True, exist_ok=True)
 
+        # Token is required for uploads; set via env or .env file
+        self.upload_token: str | None = os.getenv("UPLOAD_TOKEN")
+
         # Limit accepted file extensions for the gallery
         default_exts = "jpg,jpeg,png,gif,webp,mp4,mov,mkv,avi"
         self.allowed_extensions = {
@@ -35,14 +38,6 @@ class Settings:
             os.getenv("LINK_STORE", base_dir / "links.json")
         ).expanduser().resolve()
         self.link_store_path.parent.mkdir(parents=True, exist_ok=True)
-
-        self.login_username: str = os.getenv("LOGIN_USERNAME", "family")
-        self.login_password: str = os.getenv("LOGIN_PASSWORD", "welcome-home")
-        self.auth_db_host: str = os.getenv("AUTH_DB_HOST", "127.0.0.1")
-        self.auth_db_port: int = int(os.getenv("AUTH_DB_PORT", "3306"))
-        self.auth_db_user: str = os.getenv("AUTH_DB_USER", "admin")
-        self.auth_db_password: str = os.getenv("AUTH_DB_PASSWORD", "strongpassword")
-        self.auth_db_name: str = os.getenv("AUTH_DB_NAME", "family_gallery")
 
         # Maximum upload size in bytes (default 200MB for video)
         self.max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", 200 * 1024 * 1024))
