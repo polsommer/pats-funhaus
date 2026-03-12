@@ -40,6 +40,9 @@ function legacyFetch(url, options = {}) {
 
 const httpFetch = supportsFetch ? window.fetch.bind(window) : legacyFetch;
 
+const ENGAGEMENT_STORAGE_KEY = 'familyMediaEngagementV1';
+const VIDEO_COMPLETION_THRESHOLD = 0.92;
+
 const grid = document.querySelector('.grid');
 const statusEl = document.querySelector('.status');
 const modal = document.querySelector('.modal');
@@ -131,6 +134,8 @@ const fullscreenApis = [
 let fullscreenApi = null;
 let activeModalItem = null;
 let lastFocusedElement = null;
+let activeModalVideo = null;
+let engagementStats = loadEngagementStats();
 
 filterSelect.addEventListener('change', () => applyFilters());
 
@@ -445,6 +450,11 @@ function applyFilters({ shuffle = false } = {}) {
   const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
   const selectedCategory = filterSelect.value;
   const matchAllCategories = selectedCategory === '__all__';
+  const context = {
+    query,
+    selectedCategory: matchAllCategories ? '' : selectedCategory,
+    matchAllCategories,
+  };
 
   if (!cachedItems.length) {
     visibleItems = [];
@@ -470,7 +480,7 @@ function applyFilters({ shuffle = false } = {}) {
   if (shuffle) {
     items = shuffleItems(items);
   } else {
-    items = sortItems(items);
+    items = sortItems(items, context);
   }
 
   visibleItems = items;
@@ -480,7 +490,7 @@ function applyFilters({ shuffle = false } = {}) {
   statusEl.textContent = items.length ? '' : 'No items match your filters yet';
 }
 
-function sortItems(items) {
+function sortItems(items, context = {}) {
   const selection = sortSelect ? sortSelect.value : 'recent';
   const copy = [...items];
 
@@ -488,10 +498,125 @@ function sortItems(items) {
     return copy.sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  if (selection === 'smart') {
+    return copy.sort((a, b) => {
+      const scoreDiff = getSmartScore(b, context) - getSmartScore(a, context);
+      if (scoreDiff !== 0) return scoreDiff;
+      return new Date(b.modified).getTime() - new Date(a.modified).getTime();
+    });
+  }
+
   return copy.sort((a, b) => {
     const diff = new Date(a.modified).getTime() - new Date(b.modified).getTime();
     return selection === 'oldest' ? diff : -diff;
   });
+}
+
+function getSmartScore(item, context = {}) {
+  const now = Date.now();
+  const modifiedMs = new Date(item.modified).getTime();
+  const ageDays = Number.isFinite(modifiedMs) ? (now - modifiedMs) / (1000 * 60 * 60 * 24) : 180;
+  const freshnessScore = Math.max(0, 1 - ageDays / 180);
+
+  const stats = getEngagementEntry(item);
+  const openScore = Math.min(1, Math.log1p(stats.opens || 0) / Math.log(10));
+  const completionScore = Math.min(1, Math.log1p(stats.completions || 0) / Math.log(6));
+  const recencyHours = stats.lastOpenedAt ? (now - stats.lastOpenedAt) / (1000 * 60 * 60) : Number.POSITIVE_INFINITY;
+  const recentOpenBonus = Number.isFinite(recencyHours) ? Math.max(0, 1 - recencyHours / 72) : 0;
+  const engagementScore = Math.min(1, openScore * 0.55 + completionScore * 0.3 + recentOpenBonus * 0.15);
+
+  const categoryLabel = getCategoryLabel(item.category_path || '', item.category).toLowerCase();
+  const name = (item.name || '').toLowerCase();
+  const query = (context.query || '').trim().toLowerCase();
+  const selectedCategory = context.selectedCategory || '';
+
+  const queryBoost = query && (name.includes(query) || categoryLabel.includes(query)) ? 1 : 0;
+  const categoryBoost = selectedCategory && item.category_path === selectedCategory ? 1 : 0;
+  const contextBoost = Math.max(queryBoost * 0.08, categoryBoost * 0.12);
+
+  return freshnessScore * 0.58 + engagementScore * 0.34 + contextBoost;
+}
+
+function loadEngagementStats() {
+  if (typeof window === 'undefined' || !window.localStorage) return {};
+  try {
+    const raw = window.localStorage.getItem(ENGAGEMENT_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    console.warn('Unable to load engagement stats', error);
+    return {};
+  }
+}
+
+function persistEngagementStats() {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(ENGAGEMENT_STORAGE_KEY, JSON.stringify(engagementStats));
+  } catch (error) {
+    console.warn('Unable to save engagement stats', error);
+  }
+}
+
+function getEngagementKey(item) {
+  if (!item) return '';
+  return item.path || item.url || item.name || '';
+}
+
+function getEngagementEntry(item) {
+  const key = getEngagementKey(item);
+  if (!key) return { opens: 0, completions: 0, lastOpenedAt: 0 };
+  const entry = engagementStats[key];
+  if (!entry || typeof entry !== 'object') {
+    return { opens: 0, completions: 0, lastOpenedAt: 0 };
+  }
+  return {
+    opens: Number(entry.opens) || 0,
+    completions: Number(entry.completions) || 0,
+    lastOpenedAt: Number(entry.lastOpenedAt) || 0,
+  };
+}
+
+function updateEngagement(item, changes = {}) {
+  const key = getEngagementKey(item);
+  if (!key) return;
+  const current = getEngagementEntry(item);
+  engagementStats[key] = {
+    opens: Math.max(0, current.opens + (changes.opens || 0)),
+    completions: Math.max(0, current.completions + (changes.completions || 0)),
+    lastOpenedAt: changes.lastOpenedAt || current.lastOpenedAt || 0,
+  };
+  persistEngagementStats();
+}
+
+function handleModalVideoTimeUpdate(event) {
+  if (!activeModalItem) return;
+  const video = event.currentTarget;
+  const duration = Number(video.duration);
+  const currentTime = Number(video.currentTime);
+  if (!duration || !Number.isFinite(duration) || !Number.isFinite(currentTime)) return;
+
+  const completionRatio = currentTime / duration;
+  if (completionRatio >= VIDEO_COMPLETION_THRESHOLD && video.dataset.completionCaptured !== 'true') {
+    video.dataset.completionCaptured = 'true';
+    updateEngagement(activeModalItem, { completions: 1 });
+    if (sortSelect && sortSelect.value === 'smart') {
+      applyFilters();
+    }
+  }
+}
+
+function bindModalVideoTracking(item, mediaEl) {
+  activeModalVideo = mediaEl;
+  mediaEl.dataset.completionCaptured = 'false';
+  mediaEl.addEventListener('timeupdate', handleModalVideoTimeUpdate);
+}
+
+function clearModalVideoTracking() {
+  if (!activeModalVideo) return;
+  activeModalVideo.removeEventListener('timeupdate', handleModalVideoTimeUpdate);
+  activeModalVideo = null;
 }
 
 function shuffleItems(items) {
@@ -1148,6 +1273,8 @@ function syncModalSequence(item) {
 
 function openModal(item, { fromSlideshow = false } = {}) {
   if (!item) return;
+
+  clearModalVideoTracking();
   if (item.source === 'link') {
     const targetUrl = getResolvedMediaUrl(item.url);
     window.open(targetUrl, '_blank', 'noopener');
@@ -1161,6 +1288,7 @@ function openModal(item, { fromSlideshow = false } = {}) {
 
   syncModalSequence(item);
   activeModalItem = item;
+  updateEngagement(item, { opens: 1, lastOpenedAt: Date.now() });
   modal.classList.add('open');
   modal.setAttribute('aria-hidden', 'false');
   modal.dataset.slideshow = fromSlideshow ? 'true' : 'false';
@@ -1181,6 +1309,7 @@ function openModal(item, { fromSlideshow = false } = {}) {
     mediaEl.controls = true;
     mediaEl.playsInline = true;
     mediaEl.autoplay = true;
+    bindModalVideoTracking(item, mediaEl);
   }
 
   modalMedia.innerHTML = '';
@@ -1197,6 +1326,7 @@ function closeModal({ stopAutoDisplay = true } = {}) {
   modal.classList.remove('open');
   modal.setAttribute('aria-hidden', 'true');
   activeModalItem = null;
+  clearModalVideoTracking();
   exitSlideshowFullscreen();
   if (stopAutoDisplay && slideshowTimer) {
     stopSlideshow({ silent: true });

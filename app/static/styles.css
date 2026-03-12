@@ -353,6 +353,14 @@ main,
   align-items: center;
 }
 
+.sort-hint {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
 .shuffle {
   padding: 0.6rem 0.9rem;
   border-radius: 10px;
