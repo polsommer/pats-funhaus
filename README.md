@@ -11,10 +11,10 @@ A lightweight FastAPI-powered gallery designed for Raspberry Pi 4. It serves ima
 ## Quickstart
 
 ### Prerequisites
-Install a Python runtime with venv support and a tool for downloads:
-- Debian/Ubuntu: `sudo apt-get update && sudo apt-get install -y python3 python3-venv python3-pip curl`
-- Fedora: `sudo dnf install -y python3 python3-venv python3-pip curl`
-- macOS (Homebrew): `brew install python curl`
+Install a Python runtime with venv support, FFmpeg for derivative generation, and a tool for downloads:
+- Debian/Ubuntu: `sudo apt-get update && sudo apt-get install -y python3 python3-venv python3-pip curl ffmpeg`
+- Fedora: `sudo dnf install -y python3 python3-venv python3-pip curl ffmpeg`
+- macOS (Homebrew): `brew install python curl ffmpeg`
 
 ### Guided script (fastest)
 ```bash
@@ -36,6 +36,10 @@ Visit `http://localhost:8000` for the gallery UI. Media is stored under `app/med
 
 Environment knobs:
 - `MAX_UPLOAD_BYTES`: optional upload cap in bytes. Default is `0` (no limit, useful for very large videos). Set a positive value to enforce a limit.
+- `DERIVATIVES_DIR`: where generated thumbnails/posters/stream files are written (default: `<MEDIA_DIR>/.derivatives`).
+- `ENABLE_VIDEO_DERIVATIVES`: set to `false` to skip H.264 stream derivative generation.
+- `MAX_DERIVATIVE_WIDTH`: max width of generated previews/streams while preserving aspect ratio (default: `1280`).
+- `TARGET_VIDEO_BITRATE`: ffmpeg bitrate target for generated H.264 stream assets (default: `2500k`).
 
 ### Uploading
 
@@ -166,3 +170,12 @@ For Intel iGPUs, enable VAAPI so the UI and transcoding tools can offload H.264 
 - Encode uploads with VAAPI-backed H.264 for smooth playback, e.g. `ffmpeg -hwaccel vaapi -hwaccel_output_format vaapi -i input.mkv -c:v h264_vaapi -b:v 4M -vf 'format=nv12|vaapi,hwupload' output.mp4`
 - Browsers typically prioritize H.264; ensure uploaded files use H.264/MP4 for best compatibility
 - In Docker, pass the GPU device into the container: `docker run ... --device /dev/dri ...` (and set `LIBVA_DRIVER_NAME` if needed)
+
+### Derivative generation and Raspberry Pi acceleration
+When FFmpeg is installed, uploads are post-processed to generate lightweight derivatives:
+- `thumbnail_url` and `poster` JPG previews
+- optional H.264 MP4 `stream_url` with `+faststart` for faster startup
+
+On Raspberry Pi, hardware-assisted encode/decode can reduce CPU load. If your FFmpeg build includes V4L2 M2M codecs, you can adapt encoder flags to use `h264_v4l2m2m` instead of `libx264`. Validate available codecs with `ffmpeg -codecs | rg h264`.
+
+For best browser compatibility on Pi, keep stream derivatives as H.264 + AAC in MP4 containers.

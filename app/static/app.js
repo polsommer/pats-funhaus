@@ -1359,7 +1359,7 @@ function openModal(item, { fromSlideshow = false } = {}) {
   const isVideo = item.mime_type.startsWith('video');
   const mediaEl = document.createElement(isVideo ? 'video' : 'img');
   const previewUrl = getPreviewUrl(item);
-  const fullUrl = getResolvedMediaUrl(item.url);
+  const fullUrl = isVideo ? getPlaybackUrl(item) : getResolvedMediaUrl(item.url);
 
   mediaEl.src = fullUrl;
   if (!isVideo) {
@@ -1605,7 +1605,7 @@ function createMediaElement(item) {
   const isVideo = item.mime_type.startsWith('video');
   const mediaEl = document.createElement(isVideo ? 'video' : 'img');
   const previewUrl = getPreviewUrl(item);
-  const fullUrl = getResolvedMediaUrl(item.url);
+  const fullUrl = isVideo ? getPlaybackUrl(item) : getResolvedMediaUrl(item.url);
   const posterUrl = getPosterUrl(item);
 
   if (previewUrl) {
@@ -1724,6 +1724,11 @@ function getResolvedMediaUrl(url) {
     console.error('Failed to resolve media URL', error);
     return url;
   }
+}
+
+function getPlaybackUrl(item) {
+  const playbackCandidate = item.stream_url || item.url;
+  return getResolvedMediaUrl(playbackCandidate);
 }
 
 function getPreviewUrl(item) {

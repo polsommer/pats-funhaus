@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import (
+    BackgroundTasks,
     Body,
     Depends,
     FastAPI,
@@ -26,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .config import settings
+from .media_processing import MediaProcessor
 
 app = FastAPI(title="Pi Media Gallery", version="0.1.0")
 
@@ -39,6 +41,15 @@ app.add_middleware(
 
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/derivatives", StaticFiles(directory=settings.derivatives_dir), name="derivatives")
+
+media_processor = MediaProcessor(
+    media_dir=settings.media_dir,
+    derivatives_dir=settings.derivatives_dir,
+    enable_video_derivatives=settings.enable_video_derivatives,
+    max_derivative_width=settings.max_derivative_width,
+    target_video_bitrate=settings.target_video_bitrate,
+)
 
 
 def verify_token(x_upload_token: Annotated[str | None, Header()] = None) -> None:
@@ -271,8 +282,10 @@ def list_media(
     category: Annotated[str | None, Query(alias="category")] = None,
 ) -> list[dict[str, str | int | None]]:
     filter_category = normalize_category(category)
-    items: list[dict[str, str | int]] = []
+    items: list[dict[str, str | int | None]] = []
     for file_path in sorted(settings.media_dir.rglob("*")):
+        if settings.derivatives_dir in file_path.parents:
+            continue
         if not file_path.is_file() or not is_allowed_file(file_path.name):
             continue
         relative_path = file_path.relative_to(settings.media_dir)
@@ -284,6 +297,7 @@ def list_media(
             continue
         stat = file_path.stat()
         mime_type, _ = mimetypes.guess_type(file_path.name)
+        derivative_meta = media_processor.load_metadata(relative_path) or {}
         items.append(
             {
                 "name": file_path.name,
@@ -294,6 +308,10 @@ def list_media(
                 "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
                 "mime_type": mime_type or "application/octet-stream",
                 "url": f"/media/{relative_path}",
+                "preview_url": derivative_meta.get("preview_url"),
+                "thumbnail_url": derivative_meta.get("thumbnail_url"),
+                "poster": derivative_meta.get("poster"),
+                "stream_url": derivative_meta.get("stream_url"),
                 "source": "file",
             }
         )
@@ -313,6 +331,10 @@ def list_media(
                 "modified": link.added,
                 "mime_type": "text/html",
                 "url": link.url,
+                "preview_url": None,
+                "thumbnail_url": None,
+                "poster": None,
+                "stream_url": None,
                 "source": "link",
                 "domain": link.domain,
             }
@@ -333,6 +355,7 @@ def serve_media(media_path: str) -> FileResponse:
 
 @app.post("/api/media", status_code=201)
 def upload_media(
+    background_tasks: BackgroundTasks,
     response: Response,
     files: Annotated[list[UploadFile], File(...)],
     category: Annotated[str | None, Form()] = None,
@@ -353,7 +376,7 @@ def upload_media(
     results: list[dict[str, str | None]] = []
 
     for upload in files:
-        results.append(process_upload_file(upload, target_dir))
+        results.append(process_upload_file(upload, target_dir, background_tasks))
 
     has_success = any(result.get("status") == "success" for result in results)
     has_failure = any(result.get("status") == "error" for result in results)
@@ -371,7 +394,11 @@ def upload_media(
     }
 
 
-def process_upload_file(upload: UploadFile, target_dir: Path) -> dict[str, str | None]:
+def process_upload_file(
+    upload: UploadFile,
+    target_dir: Path,
+    background_tasks: BackgroundTasks,
+) -> dict[str, str | None]:
     if not upload.filename:
         return {"name": "", "status": "error", "message": "Filename is required", "path": None}
 
@@ -406,11 +433,18 @@ def process_upload_file(upload: UploadFile, target_dir: Path) -> dict[str, str |
             "path": None,
         }
 
+    relative_path = target_path.relative_to(settings.media_dir)
+    file_size = target_path.stat().st_size
+    if file_size > 25 * 1024 * 1024:
+        background_tasks.add_task(media_processor.generate_for_relative_path, relative_path)
+    else:
+        media_processor.generate_for_relative_path(relative_path)
+
     return {
         "name": upload.filename,
         "status": "success",
         "message": "Uploaded",
-        "path": str(target_path.relative_to(settings.media_dir)),
+        "path": str(relative_path),
     }
 
 
@@ -501,6 +535,7 @@ def delete_media(
         raise HTTPException(status_code=404, detail="Media not found")
 
     target_path.unlink()
+    media_processor.delete_for_relative_path(target_path.relative_to(settings.media_dir))
     return {"message": "Deleted", "path": str(target_path.relative_to(settings.media_dir))}
 
 
@@ -564,6 +599,7 @@ def delete_media_batch(
 
         try:
             target_path.unlink()
+            media_processor.delete_for_relative_path(target_path.relative_to(settings.media_dir))
             results.append(
                 {
                     "path": str(target_path.relative_to(settings.media_dir)),
