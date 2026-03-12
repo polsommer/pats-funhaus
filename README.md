@@ -76,6 +76,7 @@ curl -X POST \
 
   ```bash
   curl -X PATCH \
+    -H "X-Upload-Token: $UPLOAD_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"name": "Trips", "path": "travel"}' \
     http://localhost:8000/api/categories/old_name
@@ -84,7 +85,9 @@ curl -X POST \
 - Delete a category:
 
   ```bash
-  curl -X DELETE http://localhost:8000/api/categories/Trips
+  curl -X DELETE \
+    -H "X-Upload-Token: $UPLOAD_TOKEN" \
+    http://localhost:8000/api/categories/Trips
   ```
 
 ## Raspberry Pi deployment
