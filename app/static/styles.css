@@ -728,6 +728,23 @@ main {
   width: 150px;
 }
 
+
+.video-buffer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.65rem;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.video-buffer-toggle input {
+  accent-color: #ff8c7a;
+}
+
 .gallery-toolbar button {
   padding: 0.5rem 0.85rem;
   border-radius: 10px;

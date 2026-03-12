@@ -42,6 +42,12 @@ const httpFetch = supportsFetch ? window.fetch.bind(window) : legacyFetch;
 
 const ENGAGEMENT_STORAGE_KEY = 'familyMediaEngagementV1';
 const VIDEO_COMPLETION_THRESHOLD = 0.92;
+const VIDEO_BUFFER_MODE_STORAGE_KEY = 'familyVideoBufferModeV1';
+const VIDEO_BUFFER_MODES = {
+  METADATA: 'metadata',
+  AGGRESSIVE: 'aggressive',
+};
+const DEFAULT_VIDEO_BUFFER_MODE = VIDEO_BUFFER_MODES.AGGRESSIVE;
 
 const grid = document.querySelector('.grid');
 const statusEl = document.querySelector('.status');
@@ -84,6 +90,7 @@ const deleteSelectedButton = document.querySelector('#deleteSelectedButton');
 const slideshowButton = document.querySelector('#slideshowButton');
 const slideshowDelaySlider = document.querySelector('#slideshowDelay');
 const slideshowDelayValue = document.querySelector('#slideshowDelayValue');
+const videoBufferToggle = document.querySelector('#videoBufferToggle');
 const toolbarStatus = document.querySelector('.toolbar-status');
 
 const supportsIntersectionObserver = typeof IntersectionObserver !== 'undefined';
@@ -136,6 +143,7 @@ let activeModalItem = null;
 let lastFocusedElement = null;
 let activeModalVideo = null;
 let engagementStats = loadEngagementStats();
+let videoBufferMode = loadVideoBufferMode();
 
 filterSelect.addEventListener('change', () => applyFilters());
 
@@ -150,6 +158,7 @@ if (clearSelectionButton) clearSelectionButton.addEventListener('click', clearSe
 if (deleteSelectedButton) deleteSelectedButton.addEventListener('click', handleDeleteSelected);
 if (slideshowButton) slideshowButton.addEventListener('click', toggleSlideshow);
 initializeSlideshowDelay();
+initializeVideoBufferToggle();
 
 uploadForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -703,6 +712,53 @@ function syncSlideshowWithVisibleItems() {
   }
 }
 
+
+function loadVideoBufferMode() {
+  const storedMode = localStorage.getItem(VIDEO_BUFFER_MODE_STORAGE_KEY);
+  if (storedMode === VIDEO_BUFFER_MODES.METADATA || storedMode === VIDEO_BUFFER_MODES.AGGRESSIVE) {
+    return storedMode;
+  }
+  return DEFAULT_VIDEO_BUFFER_MODE;
+}
+
+function isAggressiveVideoBufferEnabled() {
+  return videoBufferMode === VIDEO_BUFFER_MODES.AGGRESSIVE;
+}
+
+function initializeVideoBufferToggle() {
+  if (!videoBufferToggle) return;
+
+  videoBufferToggle.checked = isAggressiveVideoBufferEnabled();
+  videoBufferToggle.addEventListener('change', () => {
+    videoBufferMode = videoBufferToggle.checked ? VIDEO_BUFFER_MODES.AGGRESSIVE : VIDEO_BUFFER_MODES.METADATA;
+    localStorage.setItem(VIDEO_BUFFER_MODE_STORAGE_KEY, videoBufferMode);
+    refreshVisibleVideoBuffering();
+  });
+}
+
+function refreshVisibleVideoBuffering() {
+  const videos = grid ? grid.querySelectorAll('video') : [];
+  videos.forEach((videoEl) => {
+    videoEl.preload = isAggressiveVideoBufferEnabled() ? 'auto' : 'none';
+    if (videoEl.dataset.intersecting === 'true' && videoEl.dataset.src && !videoEl.dataset.loaded) {
+      videoEl.src = videoEl.dataset.src;
+      videoEl.dataset.loaded = 'true';
+    }
+    if (videoEl.dataset.loaded === 'true') {
+      videoEl.load();
+    }
+  });
+}
+
+function releaseVideoMemory(videoEl) {
+  if (!videoEl || videoEl.tagName !== 'VIDEO') return;
+  videoEl.pause();
+  videoEl.removeAttribute('src');
+  videoEl.src = '';
+  videoEl.dataset.loaded = 'false';
+  videoEl.load();
+}
+
 function initializeSlideshowDelay() {
   if (!slideshowDelaySlider) return;
   const storedSeconds = Number(localStorage.getItem('slideshowDelaySeconds'));
@@ -793,6 +849,7 @@ function nextSlide() {
     stopSlideshow({ silent: true });
     return;
   }
+
   slideshowIndex = (slideshowIndex + 1) % slideshowItems.length;
   openModal(slideshowItems[slideshowIndex], { fromSlideshow: true });
   updateModalControls();
@@ -1274,7 +1331,9 @@ function syncModalSequence(item) {
 function openModal(item, { fromSlideshow = false } = {}) {
   if (!item) return;
 
+  const previousVideo = activeModalVideo;
   clearModalVideoTracking();
+  releaseVideoMemory(previousVideo);
   updateEngagement(item, { opens: 1, lastOpenedAt: Date.now() });
   if (sortSelect && sortSelect.value === 'smart') {
     applyFilters();
@@ -1313,6 +1372,7 @@ function openModal(item, { fromSlideshow = false } = {}) {
     mediaEl.controls = true;
     mediaEl.playsInline = true;
     mediaEl.autoplay = true;
+    mediaEl.addEventListener('ended', () => releaseVideoMemory(mediaEl), { once: true });
     bindModalVideoTracking(item, mediaEl);
   }
 
@@ -1327,10 +1387,12 @@ function openModal(item, { fromSlideshow = false } = {}) {
 }
 
 function closeModal({ stopAutoDisplay = true } = {}) {
+  const previousVideo = activeModalVideo;
   modal.classList.remove('open');
   modal.setAttribute('aria-hidden', 'true');
   activeModalItem = null;
   clearModalVideoTracking();
+  releaseVideoMemory(previousVideo);
   exitSlideshowFullscreen();
   if (stopAutoDisplay && slideshowTimer) {
     stopSlideshow({ silent: true });
@@ -1360,6 +1422,7 @@ function updateModalControls() {
 
 function showPreviousSlide() {
   if (!slideshowItems.length) return;
+
   slideshowIndex = (slideshowIndex - 1 + slideshowItems.length) % slideshowItems.length;
   openModal(slideshowItems[slideshowIndex], { fromSlideshow: true });
   if (slideshowTimer) restartSlideshowTimer();
@@ -1558,7 +1621,7 @@ function createMediaElement(item) {
     mediaEl.muted = true;
     mediaEl.playsInline = true;
     mediaEl.loop = true;
-    mediaEl.preload = 'none';
+    mediaEl.preload = isAggressiveVideoBufferEnabled() ? 'auto' : 'none';
   } else {
     mediaEl.alt = item.name;
     mediaEl.loading = 'lazy';
@@ -1581,7 +1644,8 @@ function handleMediaVisibility(entries) {
         el.src = el.dataset.src;
         el.dataset.loaded = 'true';
         if (isVideo) {
-          el.preload = 'metadata';
+          el.preload = isAggressiveVideoBufferEnabled() ? 'auto' : 'metadata';
+          el.load();
         }
       }
 
@@ -1619,7 +1683,7 @@ function eagerLoadMedia(mediaEl, isVideo) {
     mediaEl.dataset.loaded = 'true';
   }
   if (isVideo) {
-    mediaEl.preload = 'metadata';
+    mediaEl.preload = isAggressiveVideoBufferEnabled() ? 'auto' : 'metadata';
   }
 }
 
