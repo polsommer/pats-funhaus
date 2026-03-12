@@ -607,7 +607,7 @@ def list_categories() -> list[Category]:
 
 
 @app.post("/api/categories", status_code=201)
-def create_category(payload: CreateCategoryRequest) -> Category:
+def create_category(payload: CreateCategoryRequest, _: None = Depends(verify_token)) -> Category:
     try:
         return category_store.add(payload.name, payload.path)
     except ValueError as error:
@@ -615,7 +615,7 @@ def create_category(payload: CreateCategoryRequest) -> Category:
 
 
 @app.delete("/api/categories/{name}")
-def delete_category(name: str) -> Category:
+def delete_category(name: str, _: None = Depends(verify_token)) -> Category:
     try:
         return category_store.delete(name)
     except KeyError as error:
@@ -623,7 +623,11 @@ def delete_category(name: str) -> Category:
 
 
 @app.patch("/api/categories/{name}")
-def update_category(name: str, payload: UpdateCategoryRequest) -> Category:
+def update_category(
+    name: str,
+    payload: UpdateCategoryRequest,
+    _: None = Depends(verify_token),
+) -> Category:
     if payload.name is None and payload.path is None:
         raise HTTPException(status_code=400, detail="No updates provided")
 

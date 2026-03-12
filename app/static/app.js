@@ -224,17 +224,26 @@ if (categoryForm) {
       return;
     }
 
+    const tokenValue = uploadTokenInput.value.trim();
+    if (!tokenValue) {
+      setCategoryStatus('Upload token is required to create categories', 'error');
+      return;
+    }
+
     try {
       setCategoryStatus('Saving...');
       const res = await httpFetch('/api/categories', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Upload-Token': tokenValue,
+        },
         body: JSON.stringify({ name: categoryName }),
       });
       const createdCategory = await res.json().catch(() => null);
       if (!res.ok) {
         const error = createdCategory || {};
-        throw new Error(error.detail || 'Unable to save category');
+        throw new Error(error.detail || 'Unable to save category. Check your upload token.');
       }
       categoryInput.value = '';
       setCategoryStatus('Category added', 'success');
@@ -246,7 +255,7 @@ if (categoryForm) {
       });
     } catch (err) {
       console.error(err);
-      setCategoryStatus(err.message || 'Unable to save category', 'error');
+      setCategoryStatus(err.message || 'Unable to save category. Check your upload token.', 'error');
     }
   });
 }
@@ -860,12 +869,19 @@ function renderCategoryList(categories) {
 async function removeCategory(category) {
   try {
     setCategoryStatus(`Deleting ${category.name}...`);
+    const tokenValue = uploadTokenInput.value.trim();
+    if (!tokenValue) {
+      setCategoryStatus('Upload token is required to delete categories', 'error');
+      return;
+    }
+
     const res = await httpFetch(`/api/categories/${encodeURIComponent(category.name)}`, {
       method: 'DELETE',
+      headers: { 'X-Upload-Token': tokenValue },
     });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(payload.detail || 'Unable to delete category');
+      throw new Error(payload.detail || 'Unable to delete category. Check your upload token.');
     }
 
     const wasSelected = filterSelect.value === (category.path || '');
@@ -879,7 +895,7 @@ async function removeCategory(category) {
     await fetchCategories({ preserveSelection: true });
   } catch (err) {
     console.error(err);
-    setCategoryStatus(err.message || 'Unable to delete category', 'error');
+    setCategoryStatus(err.message || 'Unable to delete category. Check your upload token.', 'error');
   }
 }
 
@@ -906,17 +922,26 @@ async function promptRenameCategory(category) {
     return;
   }
 
+  const tokenValue = uploadTokenInput.value.trim();
+  if (!tokenValue) {
+    setCategoryStatus('Upload token is required to update categories', 'error');
+    return;
+  }
+
   try {
     setCategoryStatus('Updating category...');
     const res = await httpFetch(`/api/categories/${encodeURIComponent(category.name)}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Upload-Token': tokenValue,
+      },
       body: JSON.stringify(payload),
     });
 
     const updatedCategory = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(updatedCategory.detail || 'Unable to rename category');
+      throw new Error(updatedCategory.detail || 'Unable to rename category. Check your upload token.');
     }
 
     const newSelection = updatedCategory.path || payload.path || payload.name || category.path || '';
@@ -925,7 +950,7 @@ async function promptRenameCategory(category) {
     applyFilters();
   } catch (err) {
     console.error(err);
-    setCategoryStatus(err.message || 'Unable to rename category', 'error');
+    setCategoryStatus(err.message || 'Unable to rename category. Check your upload token.', 'error');
   }
 }
 
