@@ -125,6 +125,12 @@ const fullscreenApis = [
 ];
 let fullscreenApi = null;
 
+
+const SMART_SIGNALS_KEY = 'pfh-smart-signals-v1';
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+let smartSignals = loadSmartSignals();
+
+
 filterSelect.addEventListener('change', () => applyFilters());
 
 if (searchInput) searchInput.addEventListener('input', () => applyFilters());
@@ -425,6 +431,93 @@ function setCategories(categories) {
   renderCategoryList(allCategories);
 }
 
+function loadSmartSignals() {
+  if (typeof window === 'undefined' || !window.localStorage) return {};
+  try {
+    const raw = window.localStorage.getItem(SMART_SIGNALS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function saveSmartSignals() {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(SMART_SIGNALS_KEY, JSON.stringify(smartSignals));
+  } catch (error) {
+    // Ignore storage failures (private browsing/storage full)
+  }
+}
+
+function getSignalPath(item) {
+  if (!item) return '';
+  return item.path || item.url || item.name || '';
+}
+
+function trackOpenSignal(item) {
+  const key = getSignalPath(item);
+  if (!key) return;
+  const now = Date.now();
+  const existing = smartSignals[key] && typeof smartSignals[key] === 'object' ? smartSignals[key] : {};
+  smartSignals[key] = {
+    openCount: Number(existing.openCount || 0) + 1,
+    completeCount: Number(existing.completeCount || 0),
+    lastOpenedAt: now,
+    lastCompletedAt: Number(existing.lastCompletedAt || 0),
+  };
+  saveSmartSignals();
+}
+
+function trackCompletionSignal(item) {
+  const key = getSignalPath(item);
+  if (!key) return;
+  const now = Date.now();
+  const existing = smartSignals[key] && typeof smartSignals[key] === 'object' ? smartSignals[key] : {};
+  smartSignals[key] = {
+    openCount: Number(existing.openCount || 0),
+    completeCount: Number(existing.completeCount || 0) + 1,
+    lastOpenedAt: Number(existing.lastOpenedAt || now),
+    lastCompletedAt: now,
+  };
+  saveSmartSignals();
+}
+
+function getSmartScore(item, { query = '', selectedCategory = '' } = {}) {
+  const key = getSignalPath(item);
+  const signal = (key && smartSignals[key]) || {};
+
+  const modifiedMs = Number(new Date(item.modified).getTime()) || 0;
+  const freshnessDays = modifiedMs ? Math.max(0, (Date.now() - modifiedMs) / DAY_IN_MS) : 365;
+  const freshnessScore = Math.max(0, 1 - freshnessDays / 30) * 3.5;
+
+  const openCount = Number(signal.openCount || 0);
+  const completionCount = Number(signal.completeCount || 0);
+  const lastOpenedMs = Number(signal.lastOpenedAt || 0);
+  const recentlyOpenedBoost = lastOpenedMs
+    ? Math.max(0, 1 - (Date.now() - lastOpenedMs) / (14 * DAY_IN_MS)) * 1.5
+    : 0;
+  const engagementScore = Math.min(openCount, 12) * 0.35 + Math.min(completionCount, 8) * 0.85 + recentlyOpenedBoost;
+
+  const categoryPath = item.category_path || '';
+  const categoryLabel = getCategoryLabel(categoryPath, item.category).toLowerCase();
+  const name = (item.name || '').toLowerCase();
+  const normalizedQuery = (query || '').trim().toLowerCase();
+
+  let relevanceScore = 0;
+  if (selectedCategory && selectedCategory !== '__all__' && selectedCategory === categoryPath) {
+    relevanceScore += 0.8;
+  }
+  if (normalizedQuery) {
+    if (name.includes(normalizedQuery)) relevanceScore += 0.8;
+    if (categoryLabel.includes(normalizedQuery)) relevanceScore += 0.45;
+  }
+
+  return freshnessScore + engagementScore + relevanceScore;
+}
+
 function applyFilters({ shuffle = false } = {}) {
   const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
   const selectedCategory = filterSelect.value;
@@ -454,7 +547,7 @@ function applyFilters({ shuffle = false } = {}) {
   if (shuffle) {
     items = shuffleItems(items);
   } else {
-    items = sortItems(items);
+    items = sortItems(items, { query, selectedCategory });
   }
 
   visibleItems = items;
@@ -464,12 +557,20 @@ function applyFilters({ shuffle = false } = {}) {
   statusEl.textContent = items.length ? '' : 'No items match your filters yet';
 }
 
-function sortItems(items) {
+function sortItems(items, { query = '', selectedCategory = '' } = {}) {
   const selection = sortSelect ? sortSelect.value : 'recent';
   const copy = [...items];
 
   if (selection === 'name') {
     return copy.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  if (selection === 'smart') {
+    return copy.sort((a, b) => {
+      const scoreDiff = getSmartScore(b, { query, selectedCategory }) - getSmartScore(a, { query, selectedCategory });
+      if (scoreDiff !== 0) return scoreDiff;
+      return new Date(b.modified).getTime() - new Date(a.modified).getTime();
+    });
   }
 
   return copy.sort((a, b) => {
@@ -1101,6 +1202,7 @@ function getCategoryLabel(categoryPath, fallbackName) {
 }
 
 function openModal(item, { fromSlideshow = false } = {}) {
+  trackOpenSignal(item);
   if (item.source === 'link') {
     const targetUrl = getResolvedMediaUrl(item.url);
     window.open(targetUrl, '_blank', 'noopener');
@@ -1126,6 +1228,18 @@ function openModal(item, { fromSlideshow = false } = {}) {
     mediaEl.controls = true;
     mediaEl.playsInline = true;
     mediaEl.autoplay = true;
+  }
+
+  if (isVideo) {
+    const completionThreshold = 0.92;
+    const handleTimeUpdate = () => {
+      if (!Number.isFinite(mediaEl.duration) || mediaEl.duration <= 0) return;
+      if (mediaEl.currentTime / mediaEl.duration >= completionThreshold) {
+        trackCompletionSignal(item);
+        mediaEl.removeEventListener('timeupdate', handleTimeUpdate);
+      }
+    };
+    mediaEl.addEventListener('timeupdate', handleTimeUpdate);
   }
   modalContent.append(mediaEl, closeBtn);
 }
