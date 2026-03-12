@@ -56,6 +56,45 @@ class Settings:
         # Maximum upload size in bytes. Set to 0 or a negative value for no limit.
         self.max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", "0"))
 
+        # Optional AI upscaler configuration
+        self.enable_ai_upscaler: bool = os.getenv("ENABLE_AI_UPSCALER", "false").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self.upscaler_backend: str = os.getenv("UPSCALER_BACKEND", "none")
+        self.upscaler_model_path: str | None = os.getenv("UPSCALER_MODEL_PATH")
+        self.upscaler_use_gpu: bool = os.getenv("UPSCALER_USE_GPU", "false").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self.upscaler_force_cpu: bool = os.getenv("UPSCALER_FORCE_CPU", "true").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self.upscaler_worker_concurrency: int = int(os.getenv("UPSCALER_WORKER_CONCURRENCY", "1"))
+
+        self.upscaled_media_dir: Path = Path(
+            os.getenv("UPSCALER_OUTPUT_DIR", self.media_dir / "upscaled")
+        ).expanduser().resolve()
+        self.upscaled_media_dir.mkdir(parents=True, exist_ok=True)
+        self.upscaler_output_mode: str = os.getenv("UPSCALER_OUTPUT_MODE", "tree")
+
+        allowed_mimes = os.getenv("UPSCALER_ALLOWED_MIME_PREFIXES", "image/,video/")
+        self.upscaler_allowed_mime_prefixes: tuple[str, ...] = tuple(
+            prefix.strip().lower() for prefix in allowed_mimes.split(",") if prefix.strip()
+        )
+        self.upscaler_max_input_bytes: int = int(os.getenv("UPSCALER_MAX_INPUT_BYTES", str(80 * 1024 * 1024)))
+        self.upscaler_max_video_seconds: int = int(os.getenv("UPSCALER_MAX_VIDEO_SECONDS", "120"))
+        self.upscaler_video_bytes_per_second: int = int(
+            os.getenv("UPSCALER_VIDEO_BYTES_PER_SECOND", str(1_000_000))
+        )
+
     @staticmethod
     def normalize_category(category: str | None) -> str | None:
         if category is None:
