@@ -56,6 +56,23 @@ Environment knobs:
 
 When enabled, upscaling runs asynchronously with job states: `queued`, `running`, `completed`, `failed`.
 
+Supported profiles and behavior:
+- `2x`
+  - Images (`image/*`): resizes to 2x with Lanczos filtering (Pillow backend).
+  - Videos (`video/*`): ffmpeg scales to 2x, preserves aspect ratio, forces even output dimensions for codec compatibility, then applies a light sharpen pass.
+- `4x`
+  - Images (`image/*`): resizes to 4x with Lanczos filtering.
+  - Videos (`video/*`): ffmpeg scales to 4x with safety caps on maximum width/height to avoid runaway outputs, preserves aspect ratio, enforces even dimensions, then applies a light sharpen pass.
+- `denoise`
+  - Images (`image/*`): median denoise filter, resolution unchanged.
+  - Videos (`video/*`): ffmpeg denoise filter chain (`hqdn3d` + `nlmeans`), resolution unchanged.
+
+Video processing notes:
+- Video jobs are routed to a dedicated ffmpeg path based on MIME detection.
+- Output is normalized to MP4 playback defaults: H.264 video + AAC audio + `-movflags +faststart`.
+- Runtime is CPU-first by default; optional GPU acceleration is attempted only when enabled and supported by the selected backend.
+- If ffmpeg is missing, or the ffmpeg command fails, the job transitions to `failed` with the ffmpeg error captured in job state.
+
 Submit a job:
 ```bash
 curl -X POST \
