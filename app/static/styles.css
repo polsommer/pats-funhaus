@@ -996,6 +996,13 @@ main {
   border: 1px solid rgba(255, 159, 127, 0.45);
   position: relative;
   box-shadow: 0 32px 96px rgba(0, 0, 0, 0.45);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  outline: none;
+}
+
+.modal-media {
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1014,8 +1021,8 @@ main {
   background: rgba(5, 8, 20, 0.88);
 }
 
-.modal-content img,
-.modal-content video {
+.modal-media img,
+.modal-media video {
   width: 100%;
   height: auto;
   display: block;
@@ -1025,17 +1032,40 @@ main {
   background: linear-gradient(135deg, rgba(255, 214, 165, 0.15), rgba(12, 18, 38, 0.9));
 }
 
+.modal-controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  padding: 0.65rem;
+  background: rgba(7, 11, 25, 0.66);
+  border-top: 1px solid rgba(255, 159, 127, 0.35);
+}
+
+.modal-nav,
 .close {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.6rem;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(255, 159, 127, 0.5);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 159, 127, 0.55);
   color: #1f1f3a;
-  padding: 0.35rem 0.6rem;
+  padding: 0.4rem 0.75rem;
   border-radius: 8px;
   cursor: pointer;
-  box-shadow: 0 10px 28px rgba(255, 171, 133, 0.35);
+  font-weight: 700;
+}
+
+.modal-nav[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modal-shortcuts {
+  margin: 0;
+  padding: 0.45rem 0.75rem 0.7rem;
+  font-size: 0.8rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(7, 11, 25, 0.55);
 }
 
 .upload-tip {
