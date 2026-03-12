@@ -353,6 +353,16 @@ main,
   align-items: center;
 }
 
+
+.smart-sort-hint {
+  display: inline-block;
+  margin-top: 0.35rem;
+  color: #6b7280;
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+
 .shuffle {
   padding: 0.6rem 0.9rem;
   border-radius: 10px;
