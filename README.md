@@ -40,6 +40,50 @@ Environment knobs:
 - `ENABLE_VIDEO_DERIVATIVES`: set to `false` to skip H.264 stream derivative generation.
 - `MAX_DERIVATIVE_WIDTH`: max width of generated previews/streams while preserving aspect ratio (default: `1280`).
 - `TARGET_VIDEO_BITRATE`: ffmpeg bitrate target for generated H.264 stream assets (default: `2500k`).
+- `ENABLE_AI_UPSCALER`: enable async upscaler jobs (`false` by default).
+- `UPSCALER_BACKEND`: backend adapter name (`none` = copy-only fallback, `pil` = Pillow resize when installed).
+- `UPSCALER_MODEL_PATH`: optional model path for external backends.
+- `UPSCALER_USE_GPU` / `UPSCALER_FORCE_CPU`: runtime toggles for backend implementations.
+- `UPSCALER_WORKER_CONCURRENCY`: number of parallel background workers (default: `1`, recommended for Pi).
+- `UPSCALER_OUTPUT_DIR`: destination root for generated outputs (default: `<MEDIA_DIR>/upscaled`).
+- `UPSCALER_OUTPUT_MODE`: `tree` (default, under `upscaled/`) or `sibling` (creates `*_upscaled_<profile>` next to source).
+- `UPSCALER_ALLOWED_MIME_PREFIXES`: comma-separated accepted MIME prefixes (default: `image/,video/`).
+- `UPSCALER_MAX_INPUT_BYTES`: per-job size cap (default: `83886080` bytes).
+- `UPSCALER_MAX_VIDEO_SECONDS`: approximate max video duration cap used for guardrails.
+
+
+### AI upscaler jobs (optional)
+
+When enabled, upscaling runs asynchronously with job states: `queued`, `running`, `completed`, `failed`.
+
+Submit a job:
+```bash
+curl -X POST \
+  -H "X-Upload-Token: $UPLOAD_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"path":"family/photo.jpg","profile":"2x","overwrite":false}' \
+  http://localhost:8000/api/upscale
+```
+
+Check status:
+```bash
+curl http://localhost:8000/api/upscale/<job_id>
+```
+
+List recent jobs:
+```bash
+curl http://localhost:8000/api/upscale
+```
+
+Cancel a running/queued job:
+```bash
+curl -X DELETE -H "X-Upload-Token: $UPLOAD_TOKEN" http://localhost:8000/api/upscale/<job_id>
+```
+
+Performance notes for Raspberry Pi:
+- Keep `UPSCALER_WORKER_CONCURRENCY=1` unless you have active cooling and CPU headroom.
+- `4x` profiles can take significantly longer than `2x`; for older Pi boards prefer `2x` or `denoise`.
+- GPU acceleration depends on the chosen backend and platform support.
 
 ### Uploading
 

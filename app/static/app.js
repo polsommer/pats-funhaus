@@ -92,6 +92,7 @@ const slideshowDelaySlider = document.querySelector('#slideshowDelay');
 const slideshowDelayValue = document.querySelector('#slideshowDelayValue');
 const videoBufferToggle = document.querySelector('#videoBufferToggle');
 const toolbarStatus = document.querySelector('.toolbar-status');
+const upscaleProfileSelect = document.querySelector('#upscaleProfileSelect');
 
 const supportsIntersectionObserver = typeof IntersectionObserver !== 'undefined';
 const mediaObserver = supportsIntersectionObserver
@@ -144,6 +145,8 @@ let lastFocusedElement = null;
 let activeModalVideo = null;
 let engagementStats = loadEngagementStats();
 let videoBufferMode = loadVideoBufferMode();
+let upscaleJobs = new Map();
+let upscalePollTimer = null;
 
 filterSelect.addEventListener('change', () => applyFilters());
 
@@ -1146,6 +1149,131 @@ async function promptRenameCategory(category) {
   }
 }
 
+
+function isUpscaleSupportedItem(item) {
+  if (!item || item.source === 'link') return false;
+  return item.mime_type.startsWith('image/') || item.mime_type.startsWith('video/');
+}
+
+function getUpscaleStatus(item) {
+  const job = upscaleJobs.get(item.path);
+  if (!job) return null;
+  if (job.state === 'completed' && job.output_path) return `Done (${job.profile})`;
+  if (job.state === 'failed') return `Failed (${job.error || 'error'})`;
+  return `${job.state} (${job.profile})`;
+}
+
+async function submitUpscale(item) {
+  const tokenValue = uploadTokenInput.value.trim();
+  if (!tokenValue) {
+    setToolbarStatus('Upload token is required to run upscale jobs', 'error');
+    return;
+  }
+
+  const profile = upscaleProfileSelect ? upscaleProfileSelect.value : '2x';
+  try {
+    setToolbarStatus(`Queueing upscale (${profile}) for ${item.name}...`, 'info');
+    const res = await httpFetch('/api/upscale', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Upload-Token': tokenValue,
+      },
+      body: JSON.stringify({ path: item.path, profile, overwrite: false }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(payload.detail || 'Unable to queue upscale job');
+    }
+
+    upscaleJobs.set(item.path, { id: payload.job_id, state: payload.state, profile });
+    startUpscalePolling();
+    renderGrid(visibleItems);
+    setToolbarStatus(`Upscale job queued for ${item.name}`, 'success');
+  } catch (err) {
+    console.error(err);
+    setToolbarStatus(err.message || 'Unable to queue upscale job', 'error');
+  }
+}
+
+async function cancelUpscale(itemPath) {
+  const tokenValue = uploadTokenInput.value.trim();
+  const job = upscaleJobs.get(itemPath);
+  if (!tokenValue || !job || !job.id) return;
+
+  try {
+    const res = await httpFetch(`/api/upscale/${encodeURIComponent(job.id)}`, {
+      method: 'DELETE',
+      headers: { 'X-Upload-Token': tokenValue },
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      throw new Error(payload.detail || 'Unable to cancel upscale job');
+    }
+    setToolbarStatus('Upscale job cancelled', 'info');
+    await pollUpscaleJobs();
+  } catch (err) {
+    console.error(err);
+    setToolbarStatus(err.message || 'Unable to cancel upscale job', 'error');
+  }
+}
+
+function startUpscalePolling() {
+  if (upscalePollTimer) return;
+  upscalePollTimer = window.setInterval(pollUpscaleJobs, 2000);
+}
+
+function stopUpscalePolling() {
+  if (!upscalePollTimer) return;
+  window.clearInterval(upscalePollTimer);
+  upscalePollTimer = null;
+}
+
+async function pollUpscaleJobs() {
+  if (!upscaleJobs.size) {
+    stopUpscalePolling();
+    return;
+  }
+
+  const tracked = Array.from(upscaleJobs.entries());
+  let hasActive = false;
+  for (const [itemPath, meta] of tracked) {
+    if (!meta.id) continue;
+    try {
+      const res = await httpFetch(`/api/upscale/${encodeURIComponent(meta.id)}`);
+      if (!res.ok) continue;
+      const payload = await res.json();
+      const job = payload.job || {};
+      upscaleJobs.set(itemPath, {
+        id: job.id,
+        state: job.state,
+        profile: job.profile,
+        output_path: job.output_path,
+        output_url: job.output_url,
+        error: job.error,
+      });
+      if (job.state === 'queued' || job.state === 'running') {
+        hasActive = true;
+      }
+    } catch (error) {
+      console.warn('Unable to poll upscale job', error);
+      hasActive = true;
+    }
+  }
+
+  renderGrid(visibleItems);
+  const completed = Array.from(upscaleJobs.values()).find((job) => job.state === 'completed');
+  if (completed) {
+    setToolbarStatus('Upscale complete — open result from card action', 'success');
+  }
+
+  if (!hasActive) {
+    stopUpscalePolling();
+    fetchMedia();
+  }
+}
+
+
 function renderGrid(items) {
   if (mediaObserver && mediaObserver.disconnect) {
     mediaObserver.disconnect();
@@ -1186,7 +1314,54 @@ function renderGrid(items) {
       <span>${new Date(item.modified).toLocaleString()}</span>
     `;
 
-    card.append(selectToggle, mediaEl, meta);
+    const cardActions = document.createElement('div');
+    cardActions.className = 'card-actions';
+
+    if (isUpscaleSupportedItem(item)) {
+      const upscaleButton = document.createElement('button');
+      upscaleButton.type = 'button';
+      upscaleButton.className = 'card-action';
+      upscaleButton.textContent = 'Upscale';
+      upscaleButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        submitUpscale(item);
+      });
+      cardActions.appendChild(upscaleButton);
+
+      const jobStatus = getUpscaleStatus(item);
+      const job = upscaleJobs.get(item.path);
+      if (jobStatus) {
+        const statusBadge = document.createElement('span');
+        statusBadge.className = 'badge upscale-status';
+        statusBadge.textContent = jobStatus;
+        cardActions.appendChild(statusBadge);
+      }
+
+      if (job && job.state === 'completed' && job.output_url) {
+        const openResult = document.createElement('a');
+        openResult.className = 'card-action';
+        openResult.href = getResolvedMediaUrl(job.output_url);
+        openResult.target = '_blank';
+        openResult.rel = 'noopener';
+        openResult.textContent = 'Open result';
+        openResult.addEventListener('click', (event) => event.stopPropagation());
+        cardActions.appendChild(openResult);
+      }
+
+      if (job && (job.state === 'queued' || job.state === 'running')) {
+        const cancelButton = document.createElement('button');
+        cancelButton.type = 'button';
+        cancelButton.className = 'card-action';
+        cancelButton.textContent = 'Cancel';
+        cancelButton.addEventListener('click', (event) => {
+          event.stopPropagation();
+          cancelUpscale(item.path);
+        });
+        cardActions.appendChild(cancelButton);
+      }
+    }
+
+    card.append(selectToggle, mediaEl, meta, cardActions);
     card.addEventListener('click', (event) => {
       if (event.target.closest('.select-toggle')) return;
       openModal(item);
@@ -1580,6 +1755,7 @@ watchFullscreenChanges();
 updateSelectionUI();
 fetchCategories();
 fetchMedia();
+pollUpscaleJobs();
 
 function createMediaElement(item) {
   if (item.source === 'link') {
