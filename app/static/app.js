@@ -48,6 +48,16 @@ const VIDEO_BUFFER_MODES = {
   AGGRESSIVE: 'aggressive',
 };
 const DEFAULT_VIDEO_BUFFER_MODE = VIDEO_BUFFER_MODES.AGGRESSIVE;
+const DEFAULT_UPSCALE_PROFILES = [
+  { key: '2x', label: '2x (fast)' },
+  { key: '2x_hq', label: '2x HQ (balanced)' },
+  { key: '4x', label: '4x (slow)' },
+  { key: '4x_hq', label: '4x HQ (slowest)' },
+  { key: 'video_hq', label: 'Video HQ' },
+  { key: 'anime', label: 'Anime' },
+  { key: 'photo_detail', label: 'Photo detail' },
+  { key: 'denoise', label: 'Denoise' },
+];
 const VIDEO_BUFFER_LIMITS = {
   [VIDEO_BUFFER_MODES.METADATA]: 3,
   [VIDEO_BUFFER_MODES.AGGRESSIVE]: 8,
@@ -1221,6 +1231,38 @@ async function promptRenameCategory(category) {
 }
 
 
+
+
+function populateUpscaleProfiles(profiles) {
+  if (!upscaleProfileSelect) return;
+  const current = upscaleProfileSelect.value || '2x';
+  upscaleProfileSelect.innerHTML = '';
+
+  profiles.forEach((profile) => {
+    if (!profile || !profile.key) return;
+    const option = document.createElement('option');
+    option.value = profile.key;
+    option.textContent = profile.label || profile.key;
+    upscaleProfileSelect.appendChild(option);
+  });
+
+  upscaleProfileSelect.value = profiles.some((p) => p.key === current) ? current : (profiles[0] && profiles[0].key) || '2x';
+}
+
+async function fetchUpscaleProfiles() {
+  if (!upscaleProfileSelect) return;
+  try {
+    const res = await httpFetch('/api/upscale/profiles');
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok || !Array.isArray(payload.profiles) || !payload.profiles.length) {
+      throw new Error('Invalid upscale profile payload');
+    }
+    populateUpscaleProfiles(payload.profiles);
+  } catch (error) {
+    populateUpscaleProfiles(DEFAULT_UPSCALE_PROFILES);
+  }
+}
+
 function isUpscaleSupportedItem(item) {
   if (!item || item.source === 'link') return false;
   return item.mime_type.startsWith('image/') || item.mime_type.startsWith('video/');
@@ -1835,6 +1877,7 @@ if (heroUploadButton) {
 
 watchFullscreenChanges();
 updateSelectionUI();
+fetchUpscaleProfiles();
 fetchCategories();
 fetchMedia();
 pollUpscaleJobs();

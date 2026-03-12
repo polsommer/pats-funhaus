@@ -41,7 +41,8 @@ Environment knobs:
 - `MAX_DERIVATIVE_WIDTH`: max width of generated previews/streams while preserving aspect ratio (default: `1280`).
 - `TARGET_VIDEO_BITRATE`: ffmpeg bitrate target for generated H.264 stream assets (default: `2500k`).
 - `ENABLE_AI_UPSCALER`: enable async upscaler jobs (`false` by default).
-- `UPSCALER_BACKEND`: backend adapter name (`none` = copy-only fallback, `pil` = Pillow resize when installed).
+- `UPSCALER_BACKEND`: global fallback backend adapter name (`none` = copy-only fallback, `pil` = Pillow resize when installed).
+- `UPSCALER_IMAGE_BACKEND` / `UPSCALER_VIDEO_BACKEND`: backend selection override per media type (falls back to `UPSCALER_BACKEND`).
 - `UPSCALER_MODEL_PATH`: optional model path for external backends.
 - `UPSCALER_USE_GPU` / `UPSCALER_FORCE_CPU`: runtime toggles for backend implementations.
 - `UPSCALER_WORKER_CONCURRENCY`: number of parallel background workers (default: `1`, recommended for Pi).
@@ -50,6 +51,10 @@ Environment knobs:
 - `UPSCALER_ALLOWED_MIME_PREFIXES`: comma-separated accepted MIME prefixes (default: `image/,video/`).
 - `UPSCALER_MAX_INPUT_BYTES`: per-job size cap (default: `83886080` bytes).
 - `UPSCALER_MAX_VIDEO_SECONDS`: approximate max video duration cap used for guardrails.
+- `UPSCALER_VIDEO_BITRATE_TARGETS`: JSON object mapping profile -> target bitrate for ffmpeg video output.
+- `UPSCALER_IMAGE_QUALITY_TARGETS`: JSON object mapping profile -> image quality target used by Pillow (`jpg`/`webp`).
+- `UPSCALER_DENOISE_STRENGTHS` / `UPSCALER_SHARPEN_STRENGTHS`: JSON object mapping profile -> optional strength values.
+- `UPSCALER_MAX_OUTPUT_DIMENSIONS`: JSON object mapping profile -> max output width/height cap.
 
 
 ### AI upscaler jobs (optional)
@@ -58,14 +63,29 @@ When enabled, upscaling runs asynchronously with job states: `queued`, `running`
 
 Supported profiles and behavior:
 - `2x`
-  - Images (`image/*`): resizes to 2x with Lanczos filtering (Pillow backend).
-  - Videos (`video/*`): ffmpeg scales to 2x, preserves aspect ratio, forces even output dimensions for codec compatibility, then applies a light sharpen pass.
+  - Images (`image/*`): fast 2x Lanczos upscale + light sharpening.
+  - Videos (`video/*`): ffmpeg 2x scale pipeline with profile bitrate target.
+- `2x_hq`
+  - Images: 2x upscale with extra denoise pass + stronger sharpen/quality target.
+  - Videos: 2x scale + denoise before sharpen, tuned for cleaner output.
 - `4x`
-  - Images (`image/*`): resizes to 4x with Lanczos filtering.
-  - Videos (`video/*`): ffmpeg scales to 4x with safety caps on maximum width/height to avoid runaway outputs, preserves aspect ratio, enforces even dimensions, then applies a light sharpen pass.
-- `denoise`
-  - Images (`image/*`): median denoise filter, resolution unchanged.
-  - Videos (`video/*`): ffmpeg denoise filter chain (`hqdn3d` + `nlmeans`), resolution unchanged.
+  - Images: 4x upscale with output dimension cap.
+  - Videos: 4x scale with cap and balanced bitrate target.
+- `4x_hq`
+  - Images: 4x upscale with extra denoise, stronger sharpen, and higher quality target.
+  - Videos: 4x scale + denoise + highest default bitrate target.
+- `video_hq`
+  - Images: detail-preserving cleanup without aggressive resize.
+  - Videos: high-quality 2x video-focused pipeline with heavier denoise and bitrate budget.
+- `anime`
+  - Images: 2x anime-oriented smooth/detail pipeline.
+  - Videos: 2x scale + mild saturation/contrast tuning for animated content.
+- `photo_detail`
+  - Images: 2x upscale with denoise and detail-focused sharpen.
+  - Videos: 2x upscale with denoise + sharpen tuned for live-action footage.
+- `denoise` (legacy profile retained for compatibility)
+  - Images: denoise-focused cleanup without forced resize.
+  - Videos: denoise + codec-safe scaling to even dimensions.
 
 Video processing notes:
 - Video jobs are routed to a dedicated ffmpeg path based on MIME detection.
@@ -98,6 +118,10 @@ curl -X DELETE -H "X-Upload-Token: $UPLOAD_TOKEN" http://localhost:8000/api/upsc
 ```
 
 Performance notes for Raspberry Pi:
+- Recommended Pi defaults: `UPSCALER_WORKER_CONCURRENCY=1`, `UPSCALER_FORCE_CPU=true`, and prefer `2x`/`2x_hq`/`denoise` profiles.
+- Suggested Pi bitrate map: `{"2x":"2200k","2x_hq":"3200k","4x":"4200k","4x_hq":"5600k","video_hq":"6000k","anime":"2800k","photo_detail":"3600k","denoise":"2200k"}`.
+- Keep per-profile max dimensions conservative on Pi (for example: `4x` and `4x_hq` at `4096`).
+- For stronger x86/desktop GPUs, use `UPSCALER_VIDEO_BACKEND=ffmpeg_cuda` (if available), `UPSCALER_FORCE_CPU=false`, higher bitrate targets, and `4x_hq`/`video_hq` defaults.
 - Keep `UPSCALER_WORKER_CONCURRENCY=1` unless you have active cooling and CPU headroom.
 - `4x` profiles can take significantly longer than `2x`; for older Pi boards prefer `2x` or `denoise`.
 - GPU acceleration depends on the chosen backend and platform support.

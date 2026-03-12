@@ -29,7 +29,14 @@ from pydantic import BaseModel
 from .config import settings
 from .media_processing import MediaProcessor
 from .upscale.jobs import job_manager
-from .upscale.models import UpscaleRequest, UpscaleStatusResponse, UpscaleSubmitResponse
+from .upscale.models import (
+    UPSCALE_PROFILE_LABELS,
+    UpscaleProfileOption,
+    UpscaleProfilesResponse,
+    UpscaleRequest,
+    UpscaleStatusResponse,
+    UpscaleSubmitResponse,
+)
 
 app = FastAPI(title="Pi Media Gallery", version="0.1.0")
 
@@ -637,6 +644,17 @@ def delete_media_batch(
             response.status_code = 400
 
     return {"results": results}
+
+
+
+
+@app.get("/api/upscale/profiles", response_model=UpscaleProfilesResponse)
+def list_upscale_profiles() -> UpscaleProfilesResponse:
+    profiles = [
+        UpscaleProfileOption(key=key, label=label)
+        for key, label in UPSCALE_PROFILE_LABELS.items()
+    ]
+    return UpscaleProfilesResponse(profiles=profiles)
 
 
 @app.post("/api/upscale", response_model=UpscaleSubmitResponse, status_code=202)
