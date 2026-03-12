@@ -15,6 +15,20 @@ class Settings:
         ).expanduser().resolve()
         self.media_dir.mkdir(parents=True, exist_ok=True)
 
+        self.derivatives_dir: Path = Path(
+            os.getenv("DERIVATIVES_DIR", self.media_dir / ".derivatives")
+        ).expanduser().resolve()
+        self.derivatives_dir.mkdir(parents=True, exist_ok=True)
+
+        self.enable_video_derivatives: bool = os.getenv("ENABLE_VIDEO_DERIVATIVES", "true").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self.max_derivative_width: int = int(os.getenv("MAX_DERIVATIVE_WIDTH", "1280"))
+        self.target_video_bitrate: str = os.getenv("TARGET_VIDEO_BITRATE", "2500k")
+
         # Token is required for uploads; set via env or .env file
         self.upload_token: str | None = os.getenv("UPLOAD_TOKEN")
 
