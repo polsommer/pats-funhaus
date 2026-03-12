@@ -48,6 +48,10 @@ const VIDEO_BUFFER_MODES = {
   AGGRESSIVE: 'aggressive',
 };
 const DEFAULT_VIDEO_BUFFER_MODE = VIDEO_BUFFER_MODES.AGGRESSIVE;
+const VIDEO_BUFFER_LIMITS = {
+  [VIDEO_BUFFER_MODES.METADATA]: 3,
+  [VIDEO_BUFFER_MODES.AGGRESSIVE]: 8,
+};
 
 const grid = document.querySelector('.grid');
 const statusEl = document.querySelector('.status');
@@ -147,6 +151,7 @@ let engagementStats = loadEngagementStats();
 let videoBufferMode = loadVideoBufferMode();
 let upscaleJobs = new Map();
 let upscalePollTimer = null;
+const activeVideoBuffer = new Map();
 
 filterSelect.addEventListener('change', () => applyFilters());
 
@@ -741,25 +746,91 @@ function initializeVideoBufferToggle() {
 
 function refreshVisibleVideoBuffering() {
   const videos = grid ? grid.querySelectorAll('video') : [];
+  const intersectingVideos = [];
+  const nonIntersectingVideos = [];
+
   videos.forEach((videoEl) => {
     videoEl.preload = isAggressiveVideoBufferEnabled() ? 'auto' : 'none';
     if (videoEl.dataset.intersecting === 'true' && videoEl.dataset.src && !videoEl.dataset.loaded) {
       videoEl.src = videoEl.dataset.src;
       videoEl.dataset.loaded = 'true';
+      trackVideoBuffer(videoEl, { forceTouch: true });
+    }
+    if (videoEl.dataset.intersecting === 'true') {
+      intersectingVideos.push(videoEl);
+    } else {
+      nonIntersectingVideos.push(videoEl);
     }
     if (videoEl.dataset.loaded === 'true') {
       videoEl.load();
     }
   });
+
+  intersectingVideos.forEach((videoEl) => trackVideoBuffer(videoEl, { forceTouch: true }));
+  nonIntersectingVideos.forEach((videoEl) => trackVideoBuffer(videoEl));
+  enforceVideoBufferBudget();
 }
 
 function releaseVideoMemory(videoEl) {
   if (!videoEl || videoEl.tagName !== 'VIDEO') return;
+  untrackVideoBuffer(videoEl);
   videoEl.pause();
   videoEl.removeAttribute('src');
   videoEl.src = '';
   videoEl.dataset.loaded = 'false';
   videoEl.load();
+}
+
+function getVideoBufferLimit() {
+  return VIDEO_BUFFER_LIMITS[videoBufferMode] || VIDEO_BUFFER_LIMITS[VIDEO_BUFFER_MODES.METADATA];
+}
+
+function getVideoPriority(videoEl, preferredVideo) {
+  if (!videoEl) return -1;
+  if (videoEl === preferredVideo) return 100;
+
+  let priority = 0;
+  if (videoEl === activeModalVideo) priority += 60;
+  if (videoEl.dataset.intersecting === 'true') priority += 20;
+  if (videoEl.dataset.shouldPlay === 'true') priority += 15;
+  if (document.activeElement === videoEl) priority += 10;
+  return priority;
+}
+
+function trackVideoBuffer(videoEl, { forceTouch = false } = {}) {
+  if (!videoEl || videoEl.tagName !== 'VIDEO' || videoEl.dataset.loaded !== 'true') return;
+
+  if (!activeVideoBuffer.has(videoEl) || forceTouch) {
+    activeVideoBuffer.delete(videoEl);
+    activeVideoBuffer.set(videoEl, Date.now());
+  }
+}
+
+function untrackVideoBuffer(videoEl) {
+  if (!videoEl || videoEl.tagName !== 'VIDEO') return;
+  activeVideoBuffer.delete(videoEl);
+}
+
+function enforceVideoBufferBudget(preferredVideo) {
+  const maxResidentVideos = getVideoBufferLimit();
+  while (activeVideoBuffer.size > maxResidentVideos) {
+    let candidate = null;
+    let candidatePriority = Number.POSITIVE_INFINITY;
+    let candidateTouchedAt = Number.POSITIVE_INFINITY;
+
+    activeVideoBuffer.forEach((touchedAt, videoEl) => {
+      if (!videoEl || videoEl === preferredVideo || videoEl === activeModalVideo) return;
+      const priority = getVideoPriority(videoEl, preferredVideo);
+      if (priority < candidatePriority || (priority === candidatePriority && touchedAt < candidateTouchedAt)) {
+        candidate = videoEl;
+        candidatePriority = priority;
+        candidateTouchedAt = touchedAt;
+      }
+    });
+
+    if (!candidate) break;
+    releaseVideoMemory(candidate);
+  }
 }
 
 function initializeSlideshowDelay() {
@@ -1547,7 +1618,18 @@ function openModal(item, { fromSlideshow = false } = {}) {
     mediaEl.controls = true;
     mediaEl.playsInline = true;
     mediaEl.autoplay = true;
-    mediaEl.addEventListener('ended', () => releaseVideoMemory(mediaEl), { once: true });
+    mediaEl.dataset.loaded = 'true';
+    trackVideoBuffer(mediaEl, { forceTouch: true });
+    if (!mediaEl.loop) {
+      mediaEl.addEventListener(
+        'ended',
+        () => {
+          releaseVideoMemory(mediaEl);
+        },
+        { once: true }
+      );
+    }
+    enforceVideoBufferBudget(mediaEl);
     bindModalVideoTracking(item, mediaEl);
   }
 
@@ -1819,19 +1901,28 @@ function handleMediaVisibility(entries) {
       if (!el.dataset.loaded && el.dataset.src) {
         el.src = el.dataset.src;
         el.dataset.loaded = 'true';
+        trackVideoBuffer(el, { forceTouch: true });
         if (isVideo) {
           el.preload = isAggressiveVideoBufferEnabled() ? 'auto' : 'metadata';
           el.load();
         }
       }
 
+      if (isVideo) {
+        trackVideoBuffer(el, { forceTouch: true });
+      }
+
       if (isVideo && el.dataset.shouldPlay === 'true') {
         el.play().catch(() => {});
+        enforceVideoBufferBudget(el);
       }
     } else if (isVideo) {
       stopVideoPlayback(el);
+      releaseVideoMemory(el);
     }
   });
+
+  enforceVideoBufferBudget(activeModalVideo);
 }
 
 function registerMediaElement(mediaEl, isVideo) {
@@ -1857,9 +1948,13 @@ function eagerLoadMedia(mediaEl, isVideo) {
   if (source && !mediaEl.dataset.loaded) {
     mediaEl.src = source;
     mediaEl.dataset.loaded = 'true';
+    if (isVideo) {
+      trackVideoBuffer(mediaEl, { forceTouch: true });
+    }
   }
   if (isVideo) {
     mediaEl.preload = isAggressiveVideoBufferEnabled() ? 'auto' : 'metadata';
+    enforceVideoBufferBudget();
   }
 }
 
@@ -1875,19 +1970,30 @@ function attachVideoPlaybackHandlers(mediaEl, isVideo) {
   mediaEl.addEventListener('pointerleave', () => stopVideoPlayback(mediaEl));
   mediaEl.addEventListener('focus', () => requestVideoPlayback(mediaEl));
   mediaEl.addEventListener('blur', () => stopVideoPlayback(mediaEl));
+  if (!mediaEl.loop) {
+    mediaEl.addEventListener('ended', () => {
+      stopVideoPlayback(mediaEl);
+      releaseVideoMemory(mediaEl);
+    });
+  }
   mediaEl.dataset.playHandlerAttached = 'true';
 }
 
 function requestVideoPlayback(videoEl) {
   videoEl.dataset.shouldPlay = 'true';
+  trackVideoBuffer(videoEl, { forceTouch: true });
   if (videoEl.dataset.intersecting === 'true') {
     videoEl.play().catch(() => {});
   }
+  enforceVideoBufferBudget(videoEl);
 }
 
 function stopVideoPlayback(videoEl) {
   videoEl.dataset.shouldPlay = 'false';
   videoEl.pause();
+  if (videoEl.dataset.intersecting !== 'true' && videoEl !== activeModalVideo) {
+    releaseVideoMemory(videoEl);
+  }
 }
 
 function getResolvedMediaUrl(url) {
