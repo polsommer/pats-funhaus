@@ -1386,6 +1386,60 @@ async function pollUpscaleJobs() {
   }
 }
 
+async function promptChangeItemCategory(item) {
+  if (!item || !item.path) return;
+
+  const tokenValue = uploadTokenInput.value.trim();
+  if (!tokenValue) {
+    setToolbarStatus('Upload token is required to edit categories', 'error');
+    return;
+  }
+
+  const currentLabel = getCategoryLabel(item.category_path, item.category);
+  const response = window.prompt(
+    `Set category for ${item.name}.\nUse category name or folder path. Leave blank for Uncategorized.`,
+    item.category_path || item.category || ''
+  );
+
+  if (response === null) return;
+
+  const requestedCategory = response.trim();
+  if (!requestedCategory && !item.category_path && !item.category) {
+    setToolbarStatus(`${item.name} is already Uncategorized`, 'info');
+    return;
+  }
+
+  try {
+    setToolbarStatus(`Updating category for ${item.name}...`, 'info');
+    const res = await httpFetch('/api/media/category', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Upload-Token': tokenValue,
+      },
+      body: JSON.stringify({
+        path: item.path,
+        category: requestedCategory || null,
+      }),
+    });
+
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(payload.detail || 'Unable to update item category');
+    }
+
+    const updatedLabel = payload.category || getCategoryLabel(payload.category_path || '', payload.category);
+    setToolbarStatus(
+      `${item.name}: ${currentLabel} → ${updatedLabel || 'Uncategorized'}`,
+      'success'
+    );
+    await Promise.all([fetchMedia(), fetchCategories({ preserveSelection: true })]);
+  } catch (error) {
+    console.error(error);
+    setToolbarStatus(error.message || 'Unable to update item category', 'error');
+  }
+}
+
 
 function renderGrid(items) {
   if (mediaObserver && mediaObserver.disconnect) {
@@ -1429,6 +1483,16 @@ function renderGrid(items) {
 
     const cardActions = document.createElement('div');
     cardActions.className = 'card-actions';
+
+    const categoryButton = document.createElement('button');
+    categoryButton.type = 'button';
+    categoryButton.className = 'card-action';
+    categoryButton.textContent = 'Category';
+    categoryButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      promptChangeItemCategory(item);
+    });
+    cardActions.appendChild(categoryButton);
 
     if (isUpscaleSupportedItem(item)) {
       const upscaleButton = document.createElement('button');

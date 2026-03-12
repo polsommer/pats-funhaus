@@ -286,6 +286,11 @@ class CreateLinkRequest(BaseModel):
     category: str | None = None
 
 
+class UpdateMediaCategoryRequest(BaseModel):
+    path: str
+    category: str | None = None
+
+
 @app.get("/api/media")
 def list_media(
     category: Annotated[str | None, Query(alias="category")] = None,
@@ -521,6 +526,76 @@ def _is_link_path(path: str) -> bool:
     return path.startswith("link:")
 
 
+def _resolve_category_record(category: str | None) -> Category | None:
+    normalized = normalize_category(category)
+    if normalized is None:
+        return None
+
+    category_record = category_store.get_by_name(normalized) or category_store.get_by_path(normalized)
+    if category_record is None:
+        raise HTTPException(status_code=400, detail="Unknown category")
+    return category_record
+
+
+def _update_link_category(link_path: str, category_record: Category | None) -> dict[str, str | None]:
+    link_id = link_path.split(":", 1)[-1]
+    for link in link_store.links:
+        if link.id != link_id:
+            continue
+
+        link.category = category_record.name if category_record else None
+        link.category_path = category_record.path if category_record else None
+        link_store._persist()
+        return {
+            "message": "Updated",
+            "path": link_path,
+            "category": link.category,
+            "category_path": link.category_path,
+        }
+
+    raise HTTPException(status_code=404, detail="Link not found")
+
+
+def _update_file_category(raw_path: str, category_record: Category | None) -> dict[str, str | None]:
+    target_path = _validate_media_path(raw_path)
+    if not target_path.is_file():
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    destination_dir = settings.media_dir / category_record.path if category_record else settings.media_dir
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    destination_path = _resolve_target_path(target_path.name, destination_dir)
+
+    if destination_path == target_path:
+        relative = target_path.relative_to(settings.media_dir)
+        return {
+            "message": "Updated",
+            "path": str(relative),
+            "category": category_record.name if category_record else None,
+            "category_path": category_record.path if category_record else None,
+        }
+
+    old_relative = target_path.relative_to(settings.media_dir)
+    target_path.replace(destination_path)
+    new_relative = destination_path.relative_to(settings.media_dir)
+
+    media_processor.delete_for_relative_path(old_relative)
+    media_processor.generate_for_relative_path(new_relative)
+
+    return {
+        "message": "Updated",
+        "path": str(new_relative),
+        "category": category_record.name if category_record else None,
+        "category_path": category_record.path if category_record else None,
+    }
+
+
+def _reassign_media_category(path: str, category: str | None) -> dict[str, str | None]:
+    category_record = _resolve_category_record(category)
+    if _is_link_path(path):
+        return _update_link_category(path, category_record)
+    return _update_file_category(path, category_record)
+
+
 def _delete_link_by_path(link_path: str) -> dict[str, str]:
     link_id = link_path.split(":", 1)[-1]
     try:
@@ -644,6 +719,14 @@ def delete_media_batch(
             response.status_code = 400
 
     return {"results": results}
+
+
+@app.patch("/api/media/category")
+def update_media_category(
+    payload: UpdateMediaCategoryRequest,
+    _: None = Depends(verify_token),
+) -> dict[str, str | None]:
+    return _reassign_media_category(payload.path, payload.category)
 
 
 
