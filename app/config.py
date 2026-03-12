@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Dict
@@ -64,6 +65,8 @@ class Settings:
             "on",
         }
         self.upscaler_backend: str = os.getenv("UPSCALER_BACKEND", "none")
+        self.upscaler_image_backend: str = os.getenv("UPSCALER_IMAGE_BACKEND", self.upscaler_backend)
+        self.upscaler_video_backend: str = os.getenv("UPSCALER_VIDEO_BACKEND", self.upscaler_backend)
         self.upscaler_model_path: str | None = os.getenv("UPSCALER_MODEL_PATH")
         self.upscaler_use_gpu: bool = os.getenv("UPSCALER_USE_GPU", "false").lower() in {
             "1",
@@ -93,6 +96,72 @@ class Settings:
         self.upscaler_max_video_seconds: int = int(os.getenv("UPSCALER_MAX_VIDEO_SECONDS", "120"))
         self.upscaler_video_bytes_per_second: int = int(
             os.getenv("UPSCALER_VIDEO_BYTES_PER_SECOND", str(1_000_000))
+        )
+
+        self.upscaler_video_bitrate_targets: Dict[str, str] = self._load_json_map(
+            os.getenv("UPSCALER_VIDEO_BITRATE_TARGETS"),
+            {
+                "2x": "2800k",
+                "2x_hq": "4200k",
+                "4x": "5000k",
+                "4x_hq": "7000k",
+                "video_hq": "8500k",
+                "anime": "3600k",
+                "photo_detail": "4800k",
+                "denoise": "2600k",
+            },
+        )
+        self.upscaler_image_quality_targets: Dict[str, int] = self._load_json_map(
+            os.getenv("UPSCALER_IMAGE_QUALITY_TARGETS"),
+            {
+                "2x": 90,
+                "2x_hq": 95,
+                "4x": 92,
+                "4x_hq": 96,
+                "video_hq": 92,
+                "anime": 93,
+                "photo_detail": 95,
+                "denoise": 90,
+            },
+        )
+        self.upscaler_denoise_strengths: Dict[str, float] = self._load_json_map(
+            os.getenv("UPSCALER_DENOISE_STRENGTHS"),
+            {
+                "2x": 0.0,
+                "2x_hq": 0.2,
+                "4x": 0.1,
+                "4x_hq": 0.25,
+                "video_hq": 0.35,
+                "anime": 0.15,
+                "photo_detail": 0.3,
+                "denoise": 0.75,
+            },
+        )
+        self.upscaler_sharpen_strengths: Dict[str, float] = self._load_json_map(
+            os.getenv("UPSCALER_SHARPEN_STRENGTHS"),
+            {
+                "2x": 0.8,
+                "2x_hq": 1.0,
+                "4x": 0.85,
+                "4x_hq": 1.15,
+                "video_hq": 1.2,
+                "anime": 0.7,
+                "photo_detail": 1.05,
+                "denoise": 0.2,
+            },
+        )
+        self.upscaler_max_output_dimensions: Dict[str, int] = self._load_json_map(
+            os.getenv("UPSCALER_MAX_OUTPUT_DIMENSIONS"),
+            {
+                "2x": 3840,
+                "2x_hq": 4096,
+                "4x": 4096,
+                "4x_hq": 6144,
+                "video_hq": 4096,
+                "anime": 4096,
+                "photo_detail": 5120,
+                "denoise": 4096,
+            },
         )
 
     @staticmethod
@@ -126,6 +195,20 @@ class Settings:
             mapping[clean_name] = clean_path
 
         return mapping
+
+    @staticmethod
+    def _load_json_map(raw: str | None, default: Dict[str, object]) -> Dict[str, object]:
+        if not raw:
+            return dict(default)
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return dict(default)
+        if not isinstance(parsed, dict):
+            return dict(default)
+        merged = dict(default)
+        merged.update(parsed)
+        return merged
 
 
 settings = Settings()
