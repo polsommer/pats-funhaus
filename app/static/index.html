@@ -290,9 +290,19 @@
       </div>
     </section>
 
-    <section class="modal" role="dialog" aria-modal="true">
-      <div class="modal-content">
-        <button class="close" aria-label="Close">✕</button>
+    <section class="modal" role="dialog" aria-modal="true" aria-label="Media viewer" aria-hidden="true">
+      <div class="modal-content" tabindex="-1">
+        <div class="modal-media" aria-live="polite"></div>
+        <div class="modal-controls" aria-label="Media controls">
+          <button class="modal-nav modal-prev" type="button" aria-label="Previous item">◀ Prev</button>
+          <button class="modal-nav modal-toggle-play" type="button" aria-label="Play slideshow">Play</button>
+          <button class="modal-nav modal-next" type="button" aria-label="Next item">Next ▶</button>
+          <button class="modal-nav modal-fullscreen" type="button" aria-label="Toggle fullscreen">Fullscreen</button>
+          <button class="close" type="button" aria-label="Close">✕</button>
+        </div>
+        <p class="modal-shortcuts" aria-hidden="true">
+          Shortcuts: ← Previous • → Next • Space Play/Pause • F Fullscreen • Esc Close
+        </p>
       </div>
     </section>
 

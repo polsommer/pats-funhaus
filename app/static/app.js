@@ -44,7 +44,12 @@ const grid = document.querySelector('.grid');
 const statusEl = document.querySelector('.status');
 const modal = document.querySelector('.modal');
 const modalContent = document.querySelector('.modal-content');
+const modalMedia = document.querySelector('.modal-media');
 const closeBtn = document.querySelector('.close');
+const modalPrevBtn = document.querySelector('.modal-prev');
+const modalNextBtn = document.querySelector('.modal-next');
+const modalPlayToggleBtn = document.querySelector('.modal-toggle-play');
+const modalFullscreenBtn = document.querySelector('.modal-fullscreen');
 const filterSelect = document.querySelector('#categoryFilter');
 const uploadForm = document.querySelector('#uploadForm');
 const uploadTokenInput = document.querySelector('#uploadToken');
@@ -124,6 +129,8 @@ const fullscreenApis = [
   },
 ];
 let fullscreenApi = null;
+let activeModalItem = null;
+let lastFocusedElement = null;
 
 filterSelect.addEventListener('change', () => applyFilters());
 
@@ -618,6 +625,7 @@ function startSlideshow() {
   enterFullscreenForSlideshow();
   openModal(slideshowItems[slideshowIndex], { fromSlideshow: true });
   restartSlideshowTimer();
+  updateModalControls();
 }
 
 function stopSlideshow({ silent = false } = {}) {
@@ -631,6 +639,7 @@ function stopSlideshow({ silent = false } = {}) {
   if (!silent) {
     setToolbarStatus('Auto display stopped', 'info');
   }
+  updateModalControls();
 }
 
 function setSlideshowButtonState(isActive, total = slideshowItems.length || 0) {
@@ -661,6 +670,7 @@ function nextSlide() {
   }
   slideshowIndex = (slideshowIndex + 1) % slideshowItems.length;
   openModal(slideshowItems[slideshowIndex], { fromSlideshow: true });
+  updateModalControls();
 }
 
 function updateSlideshowDelayLabel(seconds) {
@@ -1125,16 +1135,36 @@ function getCategoryLabel(categoryPath, fallbackName) {
   return categoryLookup.get(normalizedPath) || fallbackName || 'Uncategorized';
 }
 
+function syncModalSequence(item) {
+  const pictureItems = getPictureItems(visibleItems);
+  slideshowItems = pictureItems;
+  if (!slideshowItems.length) {
+    slideshowIndex = 0;
+    return;
+  }
+  const foundIndex = slideshowItems.findIndex((entry) => entry.path === item.path);
+  slideshowIndex = foundIndex >= 0 ? foundIndex : slideshowIndex % slideshowItems.length;
+}
+
 function openModal(item, { fromSlideshow = false } = {}) {
+  if (!item) return;
   if (item.source === 'link') {
     const targetUrl = getResolvedMediaUrl(item.url);
     window.open(targetUrl, '_blank', 'noopener');
     modal.classList.remove('open');
     return;
   }
+
+  if (!modal.classList.contains('open')) {
+    lastFocusedElement = document.activeElement;
+  }
+
+  syncModalSequence(item);
+  activeModalItem = item;
   modal.classList.add('open');
-  modalContent.innerHTML = '';
+  modal.setAttribute('aria-hidden', 'false');
   modal.dataset.slideshow = fromSlideshow ? 'true' : 'false';
+
   const isVideo = item.mime_type.startsWith('video');
   const mediaEl = document.createElement(isVideo ? 'video' : 'img');
   const previewUrl = getPreviewUrl(item);
@@ -1152,24 +1182,160 @@ function openModal(item, { fromSlideshow = false } = {}) {
     mediaEl.playsInline = true;
     mediaEl.autoplay = true;
   }
-  modalContent.append(mediaEl, closeBtn);
+
+  modalMedia.innerHTML = '';
+  modalMedia.append(mediaEl);
+  updateModalControls();
+  try {
+    modalContent.focus({ preventScroll: true });
+  } catch (error) {
+    modalContent.focus();
+  }
 }
 
 function closeModal({ stopAutoDisplay = true } = {}) {
   modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  activeModalItem = null;
   exitSlideshowFullscreen();
   if (stopAutoDisplay && slideshowTimer) {
     stopSlideshow({ silent: true });
   }
+
+  const focusTarget = lastFocusedElement;
+  lastFocusedElement = null;
+  if (focusTarget && typeof focusTarget.focus === 'function' && document.contains(focusTarget)) {
+    try {
+      focusTarget.focus({ preventScroll: true });
+    } catch (error) {
+      focusTarget.focus();
+    }
+  }
 }
 
+function updateModalControls() {
+  const hasSequence = slideshowItems.length > 1;
+  if (modalPrevBtn) modalPrevBtn.disabled = !hasSequence;
+  if (modalNextBtn) modalNextBtn.disabled = !hasSequence;
+  if (modalPlayToggleBtn) {
+    const playing = Boolean(slideshowTimer);
+    modalPlayToggleBtn.textContent = playing ? 'Pause' : 'Play';
+    modalPlayToggleBtn.setAttribute('aria-label', playing ? 'Pause slideshow' : 'Play slideshow');
+  }
+}
+
+function showPreviousSlide() {
+  if (!slideshowItems.length) return;
+  slideshowIndex = (slideshowIndex - 1 + slideshowItems.length) % slideshowItems.length;
+  openModal(slideshowItems[slideshowIndex], { fromSlideshow: true });
+  if (slideshowTimer) restartSlideshowTimer();
+}
+
+function toggleModalPlayPause() {
+  const mediaEl = modalMedia ? modalMedia.querySelector('video, img') : null;
+  if (mediaEl && mediaEl.tagName === 'VIDEO') {
+    if (mediaEl.paused) {
+      mediaEl.play().catch(() => {});
+    } else {
+      mediaEl.pause();
+    }
+  }
+
+  if (slideshowItems.length) {
+    if (slideshowTimer) {
+      stopSlideshow({ silent: true });
+      if (modal.classList.contains('open') && activeModalItem) {
+        syncModalSequence(activeModalItem);
+      }
+    } else {
+      if (activeModalItem) {
+        syncModalSequence(activeModalItem);
+      }
+      setSlideshowButtonState(true, slideshowItems.length);
+      restartSlideshowTimer();
+    }
+  }
+
+  updateModalControls();
+}
+
+async function toggleFullscreen() {
+  if (isFullscreenActive) {
+    exitSlideshowFullscreen();
+  } else {
+    await enterFullscreenForSlideshow();
+  }
+}
+
+function trapModalFocus(event) {
+  if (!modal.classList.contains('open') || event.key !== 'Tab') return;
+  const focusable = modal.querySelectorAll(
+    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  );
+  if (!focusable.length) {
+    event.preventDefault();
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+if (modalPrevBtn) modalPrevBtn.addEventListener('click', showPreviousSlide);
+if (modalNextBtn) modalNextBtn.addEventListener('click', nextSlide);
+if (modalPlayToggleBtn) modalPlayToggleBtn.addEventListener('click', toggleModalPlayPause);
+if (modalFullscreenBtn) modalFullscreenBtn.addEventListener('click', () => {
+  toggleFullscreen();
+});
 closeBtn.addEventListener('click', () => closeModal());
 modal.addEventListener('click', (e) => {
   if (e.target === modal) closeModal();
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeModal();
+  if (!modal.classList.contains('open')) {
+    if (e.key === 'Escape') closeModal();
+    return;
+  }
+
+  if (e.key === 'Escape') {
+    closeModal();
+    return;
+  }
+
+  if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    nextSlide();
+    return;
+  }
+
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    showPreviousSlide();
+    return;
+  }
+
+  if (e.key === ' ' || e.code === 'Space') {
+    e.preventDefault();
+    toggleModalPlayPause();
+    return;
+  }
+
+  if (e.key.toLowerCase() === 'f') {
+    e.preventDefault();
+    toggleFullscreen();
+    return;
+  }
+
+  trapModalFocus(e);
 });
 
 async function enterFullscreenForSlideshow() {
