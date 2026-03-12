@@ -1100,8 +1100,83 @@ function getCategoryLabel(categoryPath, fallbackName) {
   return categoryLookup.get(normalizedPath) || fallbackName || 'Uncategorized';
 }
 
+function getEmbeddableLink(url) {
+  if (!url) return null;
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+  } catch (error) {
+    return null;
+  }
+
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    return null;
+  }
+
+  const host = parsedUrl.hostname.toLowerCase().replace(/^www\./, '');
+  const path = parsedUrl.pathname;
+
+  if (host === 'youtu.be' || host === 'youtube.com' || host === 'm.youtube.com') {
+    let videoId = '';
+
+    if (host === 'youtu.be') {
+      videoId = path.split('/').filter(Boolean)[0] || '';
+    } else if (path.startsWith('/watch')) {
+      videoId = parsedUrl.searchParams.get('v') || '';
+    } else if (path.startsWith('/embed/') || path.startsWith('/shorts/')) {
+      videoId = path.split('/').filter(Boolean)[1] || '';
+    }
+
+    if (/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+      return {
+        provider: 'youtube',
+        embedUrl: `https://www.youtube.com/embed/${videoId}`,
+      };
+    }
+  }
+
+  if (host === 'vimeo.com' || host === 'player.vimeo.com') {
+    const segments = path.split('/').filter(Boolean);
+    let videoId = '';
+
+    if (host === 'player.vimeo.com' && segments[0] === 'video') {
+      videoId = segments[1] || '';
+    } else {
+      videoId = segments[0] || '';
+    }
+
+    if (/^\d+$/.test(videoId)) {
+      return {
+        provider: 'vimeo',
+        embedUrl: `https://player.vimeo.com/video/${videoId}`,
+      };
+    }
+  }
+
+  return null;
+}
+
 function openModal(item, { fromSlideshow = false } = {}) {
   if (item.source === 'link') {
+    const embeddableLink = getEmbeddableLink(item.url);
+    if (embeddableLink) {
+      modal.classList.add('open');
+      modalContent.innerHTML = '';
+      modal.dataset.slideshow = fromSlideshow ? 'true' : 'false';
+
+      const iframe = document.createElement('iframe');
+      iframe.className = 'modal-embed';
+      iframe.src = embeddableLink.embedUrl;
+      iframe.setAttribute('allowfullscreen', '');
+      iframe.setAttribute('allow', 'autoplay; fullscreen; picture-in-picture');
+      iframe.setAttribute('title', `${item.name || 'Linked media'} video`);
+      iframe.setAttribute('loading', 'lazy');
+
+      modalContent.append(iframe, closeBtn);
+      return;
+    }
+
     const targetUrl = getResolvedMediaUrl(item.url);
     window.open(targetUrl, '_blank', 'noopener');
     modal.classList.remove('open');
@@ -1195,6 +1270,7 @@ fetchMedia();
 
 function createMediaElement(item) {
   if (item.source === 'link') {
+    const embeddableLink = getEmbeddableLink(item.url);
     const preview = document.createElement('div');
     preview.className = 'link-preview';
 
@@ -1208,7 +1284,7 @@ function createMediaElement(item) {
 
     const hint = document.createElement('span');
     hint.className = 'open-hint';
-    hint.textContent = 'Open link';
+    hint.textContent = embeddableLink ? 'Watch here' : 'Open link';
 
     preview.append(host, domain, hint);
     return { mediaEl: preview, isVideo: false };
