@@ -1025,6 +1025,15 @@ main {
   background: linear-gradient(135deg, rgba(255, 214, 165, 0.15), rgba(12, 18, 38, 0.9));
 }
 
+.modal-content .modal-embed {
+  width: min(1200px, 100%);
+  aspect-ratio: 16 / 9;
+  max-height: 92vh;
+  border: 0;
+  display: block;
+  background: #000;
+}
+
 .close {
   position: absolute;
   top: 0.5rem;
