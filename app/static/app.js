@@ -1275,6 +1275,11 @@ function openModal(item, { fromSlideshow = false } = {}) {
   if (!item) return;
 
   clearModalVideoTracking();
+  updateEngagement(item, { opens: 1, lastOpenedAt: Date.now() });
+  if (sortSelect && sortSelect.value === 'smart') {
+    applyFilters();
+  }
+
   if (item.source === 'link') {
     const targetUrl = getResolvedMediaUrl(item.url);
     window.open(targetUrl, '_blank', 'noopener');
@@ -1288,7 +1293,6 @@ function openModal(item, { fromSlideshow = false } = {}) {
 
   syncModalSequence(item);
   activeModalItem = item;
-  updateEngagement(item, { opens: 1, lastOpenedAt: Date.now() });
   modal.classList.add('open');
   modal.setAttribute('aria-hidden', 'false');
   modal.dataset.slideshow = fromSlideshow ? 'true' : 'false';
